@@ -189,7 +189,7 @@
       <input type="text" id="f-button" maxlength="20" placeholder="I followed ✅">
       <label class="field" for="f-notfollow">If they still don't follow</label>
       <textarea id="f-notfollow" maxlength="1000" placeholder="Looks like you're not following yet 👀 Follow me, then tap the button again."></textarea>
-      <div class="muted small">Leave any of these empty to use the grey example text.</div>
+      <div class="muted small">Press <b>Tab</b> in an empty box to fill in the grey text, then edit it. Boxes left empty use the grey text anyway.</div>
     </div>
     <label class="row small" style="margin-top:12px"><input type="checkbox" id="f-all"> Apply to all posts</label>
     <label class="row small" style="margin-top:6px"><input type="checkbox" id="f-enabled" checked> Enabled</label>
@@ -408,6 +408,15 @@ function renderDialogMedia() {
 }
 $("#f-all").addEventListener("change", renderDialogMedia);
 $("#f-follow").addEventListener("change", (e) => $("#follow-fields").classList.toggle("hidden", !e.target.checked));
+
+// Tab in an empty field accepts its grey suggestion; Tab again moves on.
+for (const id of ["#f-reply", "#f-gate", "#f-button", "#f-notfollow"]) {
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || e.shiftKey || e.target.value || !e.target.placeholder) return;
+    e.preventDefault();
+    e.target.value = e.target.placeholder;
+  });
+}
 $("#f-media").addEventListener("click", (e) => {
   const b = e.target.closest("[data-rm]");
   if (b) { state.dialogMedia.splice(Number(b.dataset.rm), 1); renderDialogMedia(); }
