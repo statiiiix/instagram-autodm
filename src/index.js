@@ -84,6 +84,9 @@ async function handleEvents(body, env) {
     for (const change of entry.changes ?? []) {
       if (change.field === "comments") await handleComment(String(entry.id), change.value, env);
     }
+    for (const event of entry.messaging ?? []) {
+      await handleMessage(String(entry.id), event, env);
+    }
   }
 }
 
@@ -110,9 +113,16 @@ async function handleComment(accountId, comment, env) {
 
   const who = from.username ? `@${from.username}` : `user ${from.id}`;
   try {
-    await graph(env, "POST", `/${accountId}/messages`, {
-      body: { recipient: { comment_id: commentId }, message: { text: rule.message } },
-    });
+    if (rule.require_follow) {
+      await sendGate(env, accountId, { comment_id: commentId }, rule, mediaId, rule.gate_message || DEFAULT_GATE_MESSAGE);
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO pending (user_id, rule_id, media_id, username, created_at) VALUES (?, ?, ?, ?, ?)"
+      )
+        .bind(from.id, rule.id, mediaId, from.username ?? null, Date.now())
+        .run();
+    } else {
+      await sendMessage(env, accountId, { comment_id: commentId }, { text: rule.message });
+    }
   } catch (err) {
     // Release the claim so a later comment from this person can try again.
     await env.DB.prepare("DELETE FROM sent WHERE media_id = ? AND user_id = ? AND rule_id = ?")
@@ -130,7 +140,90 @@ async function handleComment(accountId, comment, env) {
       note = ` (public reply failed: ${err.message})`;
     }
   }
-  await logActivity(env, "info", `DM sent to ${who} for comment "${truncate(text, 80)}"${note}`, mediaId);
+  const what = rule.require_follow ? "Follow check sent to" : "DM sent to";
+  await logActivity(env, "info", `${what} ${who} for comment "${truncate(text, 80)}"${note}`, mediaId);
+}
+
+// ---------------------------------------------------------------- follow gate
+//
+// A follow-gated rule first DMs a "follow me, then tap the button" message. Tapping the
+// button (or replying anything) opens the conversation, which lets us ask Instagram
+// whether this person follows the account, and send the link if they do.
+
+const DEFAULT_GATE_MESSAGE = "Follow me first, then tap the button below and I'll send you the link 👇";
+const DEFAULT_BUTTON_LABEL = "I followed ✅";
+const DEFAULT_NOT_FOLLOWING = "Looks like you're not following yet 👀 Follow me, then tap the button again.";
+
+async function sendGate(env, accountId, recipient, rule, mediaId, text) {
+  const label = truncate(rule.button_label || DEFAULT_BUTTON_LABEL, 20);
+  const payload = `gate:${rule.id}:${mediaId}`;
+  try {
+    await sendMessage(env, accountId, recipient, {
+      text,
+      quick_replies: [{ content_type: "text", title: label, payload }],
+    });
+  } catch (err) {
+    // Some message types reject buttons; fall back to plain text and accept a typed reply.
+    console.warn("Quick reply rejected, sending text gate instead:", err.message);
+    await sendMessage(env, accountId, recipient, { text: `${text}\n\n(Reply "done" once you've followed.)` });
+  }
+}
+
+async function handleMessage(accountId, event, env) {
+  const senderId = event?.sender?.id;
+  if (!senderId || senderId === accountId || event.message?.is_echo) return;
+  const ownId = await getSetting(env, "ig_user_id");
+  if (senderId === ownId) return;
+
+  // Which gate is this about? The button carries it; a typed reply uses the latest pending gate.
+  const payload = event.message?.quick_reply?.payload || event.postback?.payload || "";
+  let gate = null;
+  const m = payload.match(/^gate:(\d+):(.+)$/);
+  if (m) {
+    gate = await env.DB.prepare("SELECT * FROM pending WHERE user_id = ? AND rule_id = ? AND media_id = ?")
+      .bind(senderId, Number(m[1]), m[2])
+      .first();
+  } else if (event.message?.text) {
+    gate = await env.DB.prepare("SELECT * FROM pending WHERE user_id = ? ORDER BY created_at DESC LIMIT 1")
+      .bind(senderId)
+      .first();
+  }
+  if (!gate) return;
+
+  const rule = await env.DB.prepare("SELECT * FROM rules WHERE id = ?").bind(gate.rule_id).first();
+  if (!rule) {
+    await env.DB.prepare("DELETE FROM pending WHERE user_id = ? AND rule_id = ?").bind(senderId, gate.rule_id).run();
+    return;
+  }
+
+  const who = gate.username ? `@${gate.username}` : `user ${senderId}`;
+  let follows;
+  try {
+    const profile = await graph(env, "GET", `/${senderId}`, { params: { fields: "is_user_follow_business,username" } });
+    follows = profile.is_user_follow_business === true;
+  } catch (err) {
+    await logActivity(env, "error", `Could not check whether ${who} follows you: ${err.message}`, gate.media_id);
+    return;
+  }
+
+  try {
+    if (follows) {
+      await sendMessage(env, accountId, { id: senderId }, { text: rule.message });
+      await env.DB.prepare("DELETE FROM pending WHERE user_id = ? AND rule_id = ? AND media_id = ?")
+        .bind(senderId, gate.rule_id, gate.media_id)
+        .run();
+      await logActivity(env, "info", `${who} follows you, link sent`, gate.media_id);
+    } else {
+      await sendGate(env, accountId, { id: senderId }, rule, gate.media_id, rule.not_following_message || DEFAULT_NOT_FOLLOWING);
+      await logActivity(env, "info", `${who} isn't following yet, asked them to follow`, gate.media_id);
+    }
+  } catch (err) {
+    await logActivity(env, "error", `Could not message ${who}: ${err.message}`, gate.media_id);
+  }
+}
+
+async function sendMessage(env, accountId, recipient, message) {
+  await graph(env, "POST", `/${accountId}/messages`, { body: { recipient, message } });
 }
 
 async function findRule(env, mediaId, text) {
@@ -234,6 +327,7 @@ async function maintenance(env) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sent WHERE created_at < ?").bind(now - 180 * 86400e3),
     env.DB.prepare("DELETE FROM activity WHERE ts < ?").bind(now - 30 * 86400e3),
+    env.DB.prepare("DELETE FROM pending WHERE created_at < ?").bind(now - 30 * 86400e3),
   ]);
 }
 
@@ -330,7 +424,11 @@ async function adminApi(request, env, route) {
   if (route === "test" && method === "POST") {
     const { media_id, text } = await readJson(request);
     const rule = await findRule(env, String(media_id ?? ""), String(text ?? ""));
-    return json({ rule: rule && { id: rule.id, keywords: JSON.parse(rule.keywords), message: rule.message, public_reply: rule.public_reply, all_media: !!rule.all_media } });
+    return json({ rule: rule && {
+      id: rule.id, keywords: JSON.parse(rule.keywords), message: rule.message, public_reply: rule.public_reply,
+      all_media: !!rule.all_media, require_follow: !!rule.require_follow,
+      gate_message: rule.gate_message || DEFAULT_GATE_MESSAGE,
+    } });
   }
 
   return json({ error: "Not found" }, 404);
@@ -352,24 +450,42 @@ function validateRule(input) {
   if (message.length > MAX_MESSAGE) throw httpError(400, `The DM message is longer than ${MAX_MESSAGE} characters`);
   if (publicReply.length > MAX_PUBLIC_REPLY) throw httpError(400, `The public reply is longer than ${MAX_PUBLIC_REPLY} characters`);
   if (!allMedia && !media.length) throw httpError(400, "Pick at least one post, or apply the rule to all posts");
-  return { keywords, message, publicReply, allMedia, media, enabled: input.enabled !== false };
+  const requireFollow = !!input.require_follow;
+  const gateMessage = String(input.gate_message ?? "").trim();
+  const notFollowingMessage = String(input.not_following_message ?? "").trim();
+  const buttonLabel = String(input.button_label ?? "").trim();
+  if (gateMessage.length > MAX_MESSAGE || notFollowingMessage.length > MAX_MESSAGE) {
+    throw httpError(400, `Follow messages must be under ${MAX_MESSAGE} characters`);
+  }
+  if (buttonLabel.length > 20) throw httpError(400, "The button label can be at most 20 characters");
+  return {
+    keywords, message, publicReply, allMedia, media, enabled: input.enabled !== false,
+    requireFollow, gateMessage, notFollowingMessage, buttonLabel,
+  };
 }
 
 async function saveRule(env, id, r) {
   const now = Date.now();
+  const fields = [
+    JSON.stringify(r.keywords), r.message, r.publicReply || null, r.allMedia ? 1 : 0, r.enabled ? 1 : 0,
+    r.requireFollow ? 1 : 0, r.gateMessage || null, r.notFollowingMessage || null, r.buttonLabel || null,
+  ];
   if (id == null) {
     const row = await env.DB.prepare(
-      `INSERT INTO rules (keywords, message, public_reply, all_media, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`
+      `INSERT INTO rules (keywords, message, public_reply, all_media, enabled,
+                          require_follow, gate_message, not_following_message, button_label, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
     )
-      .bind(JSON.stringify(r.keywords), r.message, r.publicReply || null, r.allMedia ? 1 : 0, r.enabled ? 1 : 0, now, now)
+      .bind(...fields, now, now)
       .first();
     id = row.id;
   } else {
     await env.DB.prepare(
-      `UPDATE rules SET keywords = ?, message = ?, public_reply = ?, all_media = ?, enabled = ?, updated_at = ? WHERE id = ?`
+      `UPDATE rules SET keywords = ?, message = ?, public_reply = ?, all_media = ?, enabled = ?,
+                        require_follow = ?, gate_message = ?, not_following_message = ?, button_label = ?, updated_at = ?
+        WHERE id = ?`
     )
-      .bind(JSON.stringify(r.keywords), r.message, r.publicReply || null, r.allMedia ? 1 : 0, r.enabled ? 1 : 0, now, id)
+      .bind(...fields, now, id)
       .run();
   }
   const statements = [env.DB.prepare("DELETE FROM rule_media WHERE rule_id = ?").bind(id)];
@@ -408,6 +524,10 @@ async function listRules(env) {
     public_reply: r.public_reply,
     all_media: !!r.all_media,
     enabled: !!r.enabled,
+    require_follow: !!r.require_follow,
+    gate_message: r.gate_message,
+    not_following_message: r.not_following_message,
+    button_label: r.button_label,
     sent: sentByRule[r.id] ?? 0,
     media: media.filter((m) => m.rule_id === r.id).map((m) => ({ id: m.media_id, caption: m.caption, permalink: m.permalink })),
   }));

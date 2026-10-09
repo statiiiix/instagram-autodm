@@ -180,6 +180,17 @@
     <textarea id="f-message" maxlength="1000" placeholder="Here's the link 👉 https://…" required></textarea>
     <label class="field" for="f-reply">Public reply under the comment (optional)</label>
     <input type="text" id="f-reply" maxlength="300" placeholder="Sent you a DM 📩">
+    <label class="row small" style="margin-top:12px"><input type="checkbox" id="f-follow"> <b>Only send to followers</b></label>
+    <div id="follow-fields" class="hidden">
+      <div class="muted small">First DM asks them to follow and tap a button. The link goes out once Instagram confirms they follow you.</div>
+      <label class="field" for="f-gate">First DM (asks them to follow)</label>
+      <textarea id="f-gate" maxlength="1000" placeholder="Follow me first, then tap the button below and I'll send you the link 👇"></textarea>
+      <label class="field" for="f-button">Button text</label>
+      <input type="text" id="f-button" maxlength="20" placeholder="I followed ✅">
+      <label class="field" for="f-notfollow">If they still don't follow</label>
+      <textarea id="f-notfollow" maxlength="1000" placeholder="Looks like you're not following yet 👀 Follow me, then tap the button again."></textarea>
+      <div class="muted small">Leave any of these empty to use the grey example text.</div>
+    </div>
     <label class="row small" style="margin-top:12px"><input type="checkbox" id="f-all"> Apply to all posts</label>
     <label class="row small" style="margin-top:6px"><input type="checkbox" id="f-enabled" checked> Enabled</label>
     <div id="f-media" class="chips"></div>
@@ -359,6 +370,7 @@ function renderRules() {
         <div class="row"><span class="muted small">${r.sent} sent</span><button class="btn sm" data-edit="${r.id}">Edit</button></div></div>
       <div class="msg">${esc(r.message)}</div>
       ${r.public_reply ? `<div class="muted small">Public reply: ${esc(r.public_reply)}</div>` : ""}
+      ${r.require_follow ? `<div class="small" style="margin-top:4px">🔒 Followers only</div>` : ""}
       <div class="row" style="flex-wrap:wrap;margin-top:8px">${thumbs}${r.enabled ? "" : `<span class="chip off">disabled</span>`}</div>
     </div>`;
   }).join("");
@@ -378,6 +390,11 @@ function openRule(rule, mediaIds = [], allMedia = false) {
   $("#f-reply").value = rule?.public_reply || "";
   $("#f-all").checked = rule ? rule.all_media : allMedia;
   $("#f-enabled").checked = rule ? rule.enabled : true;
+  $("#f-follow").checked = !!rule?.require_follow;
+  $("#f-gate").value = rule?.gate_message || "";
+  $("#f-button").value = rule?.button_label || "";
+  $("#f-notfollow").value = rule?.not_following_message || "";
+  $("#follow-fields").classList.toggle("hidden", !$("#f-follow").checked);
   $("#rule-delete").classList.toggle("hidden", !rule);
   renderDialogMedia();
   $("#rule-dialog").showModal();
@@ -390,6 +407,7 @@ function renderDialogMedia() {
     `<span class="chip">${esc((m.caption || "post").slice(0, 28))} <button type="button" data-rm="${i}" style="border:0;background:none;cursor:pointer" aria-label="Remove">✕</button></span>`).join("");
 }
 $("#f-all").addEventListener("change", renderDialogMedia);
+$("#f-follow").addEventListener("change", (e) => $("#follow-fields").classList.toggle("hidden", !e.target.checked));
 $("#f-media").addEventListener("click", (e) => {
   const b = e.target.closest("[data-rm]");
   if (b) { state.dialogMedia.splice(Number(b.dataset.rm), 1); renderDialogMedia(); }
@@ -401,6 +419,8 @@ $("#rule-form").addEventListener("submit", async (e) => {
   const body = {
     keywords: $("#f-keywords").value, message: $("#f-message").value, public_reply: $("#f-reply").value,
     all_media: $("#f-all").checked, enabled: $("#f-enabled").checked, media: state.dialogMedia,
+    require_follow: $("#f-follow").checked, gate_message: $("#f-gate").value,
+    button_label: $("#f-button").value, not_following_message: $("#f-notfollow").value,
   };
   try {
     if (state.editing) await api(`rules/${state.editing.id}`, { method: "PUT", body });
@@ -438,7 +458,9 @@ $("#test-run").addEventListener("click", async () => {
   try {
     const { rule } = await api("test", { method: "POST", body: { media_id: $("#test-media").value, text: $("#test-text").value } });
     $("#test-result").innerHTML = rule
-      ? `<div class="card"><b>Would send:</b><div class="msg" style="white-space:pre-wrap">${esc(rule.message)}</div><div class="muted small">Matched rule: ${esc(rule.keywords.join(", "))}${rule.all_media ? " (all posts)" : ""}</div></div>`
+      ? `<div class="card">${rule.require_follow
+          ? `<b>Would first send (follow check):</b><div class="msg">${esc(rule.gate_message)}</div><b>Then, once they follow:</b>`
+          : `<b>Would send:</b>`}<div class="msg" style="white-space:pre-wrap">${esc(rule.message)}</div><div class="muted small">Matched rule: ${esc(rule.keywords.join(", "))}${rule.all_media ? " (all posts)" : ""}</div></div>`
       : `<div class="card muted">No rule matches. Nothing would be sent.</div>`;
   } catch (err) { toast(err.message, true); }
 });

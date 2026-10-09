@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS rules (
   public_reply TEXT,
   all_media    INTEGER NOT NULL DEFAULT 0,
   enabled      INTEGER NOT NULL DEFAULT 1,
+  -- Follow gate: DM gate_message with a button first; send `message` only to followers.
+  require_follow        INTEGER NOT NULL DEFAULT 0,
+  gate_message          TEXT,
+  not_following_message TEXT,
+  button_label          TEXT,
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );
@@ -35,6 +40,16 @@ CREATE TABLE IF NOT EXISTS sent (
   comment_id TEXT    NOT NULL,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (media_id, user_id, rule_id)
+);
+
+-- People who got a follow-gate message and haven't received the link yet.
+CREATE TABLE IF NOT EXISTS pending (
+  user_id    TEXT    NOT NULL,
+  rule_id    INTEGER NOT NULL,
+  media_id   TEXT    NOT NULL,
+  username   TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, rule_id, media_id)
 );
 
 CREATE TABLE IF NOT EXISTS activity (
