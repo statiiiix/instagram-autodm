@@ -1,0 +1,548 @@
+// Instagram comment-to-DM bot: when someone comments a keyword on a post,
+// send them a private reply (DM) with the message configured for that post.
+import ADMIN_HTML from "./admin.html";
+
+const GRAPH = "https://graph.instagram.com/v26.0";
+const SESSION_DAYS = 30;
+const TOKEN_REFRESH_DAYS = 7;
+const MAX_MESSAGE = 1000;
+const MAX_PUBLIC_REPLY = 300;
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    try {
+      if (path === "/webhook") {
+        if (request.method === "GET") return verifyWebhook(url, env);
+        if (request.method === "POST") return receiveWebhook(request, env, ctx);
+        return new Response("Method not allowed", { status: 405 });
+      }
+      if (path === "/") return Response.redirect(`${url.origin}/admin`, 302);
+      if (path === "/privacy") return htmlResponse(privacyPage(env));
+      if (path === "/data-deletion") return htmlResponse(deletionPage(env));
+      if (path === "/admin") return htmlResponse(ADMIN_HTML);
+      if (path.startsWith("/admin/api/")) {
+        return await adminApi(request, env, path.slice("/admin/api/".length));
+      }
+      return new Response("Not found", { status: 404 });
+    } catch (err) {
+      console.error(err);
+      return json({ error: err.message || "Internal error" }, err.status || 500);
+    }
+  },
+
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(maintenance(env));
+  },
+};
+
+// ---------------------------------------------------------------- webhook
+
+function verifyWebhook(url, env) {
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge") ?? "";
+  if (mode === "subscribe" && env.VERIFY_TOKEN && token === env.VERIFY_TOKEN) {
+    return new Response(challenge, { status: 200 });
+  }
+  return new Response("Forbidden", { status: 403 });
+}
+
+async function receiveWebhook(request, env, ctx) {
+  const raw = await request.text();
+  const signature = request.headers.get("x-hub-signature-256") || "";
+  if (!(await validSignature(raw, signature, env.APP_SECRET))) {
+    console.warn("Rejected webhook with invalid signature");
+    return new Response("Invalid signature", { status: 401 });
+  }
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return new Response("Bad JSON", { status: 400 });
+  }
+  // Answer Meta immediately; do the work after the response is sent.
+  ctx.waitUntil(
+    handleEvents(body, env).catch((err) =>
+      logActivity(env, "error", `Webhook handling failed: ${err.message}`)
+    )
+  );
+  return new Response("OK");
+}
+
+async function validSignature(raw, header, secret) {
+  if (!secret || !header.startsWith("sha256=")) return false;
+  const expected = await hmacHex(secret, raw);
+  const given = header.slice("sha256=".length);
+  return timingSafeEqualStr(expected, given);
+}
+
+async function handleEvents(body, env) {
+  if (body.object !== "instagram") return;
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      if (change.field === "comments") await handleComment(String(entry.id), change.value, env);
+    }
+  }
+}
+
+async function handleComment(accountId, comment, env) {
+  const commentId = comment?.id;
+  const mediaId = comment?.media?.id;
+  const from = comment?.from;
+  const text = comment?.text ?? "";
+  if (!commentId || !mediaId || !from?.id) return;
+
+  // Ignore the account's own comments, including the bot's public replies.
+  const ownId = await getSetting(env, "ig_user_id");
+  if (from.id === accountId || from.id === ownId) return;
+
+  const rule = await findRule(env, mediaId, text);
+  if (!rule) return;
+
+  const claimed = await env.DB.prepare(
+    "INSERT OR IGNORE INTO sent (media_id, user_id, rule_id, comment_id, created_at) VALUES (?, ?, ?, ?, ?)"
+  )
+    .bind(mediaId, from.id, rule.id, commentId, Date.now())
+    .run();
+  if (!claimed.meta.changes) return; // this person already got this rule's DM on this post
+
+  const who = from.username ? `@${from.username}` : `user ${from.id}`;
+  try {
+    await graph(env, "POST", `/${accountId}/messages`, {
+      body: { recipient: { comment_id: commentId }, message: { text: rule.message } },
+    });
+  } catch (err) {
+    // Release the claim so a later comment from this person can try again.
+    await env.DB.prepare("DELETE FROM sent WHERE media_id = ? AND user_id = ? AND rule_id = ?")
+      .bind(mediaId, from.id, rule.id)
+      .run();
+    await logActivity(env, "error", `Could not DM ${who}: ${err.message}`, mediaId);
+    return;
+  }
+
+  let note = "";
+  if (rule.public_reply) {
+    try {
+      await graph(env, "POST", `/${commentId}/replies`, { params: { message: rule.public_reply } });
+    } catch (err) {
+      note = ` (public reply failed: ${err.message})`;
+    }
+  }
+  await logActivity(env, "info", `DM sent to ${who} for comment "${truncate(text, 80)}"${note}`, mediaId);
+}
+
+async function findRule(env, mediaId, text) {
+  const comment = normalize(text);
+  if (!comment.trim()) return null;
+  // Rules attached to this post are checked before "all posts" rules; newest first.
+  const { results } = await env.DB.prepare(
+    `SELECT r.*, CASE WHEN rm.media_id IS NULL THEN 1 ELSE 0 END AS is_global
+       FROM rules r
+       LEFT JOIN rule_media rm ON rm.rule_id = r.id AND rm.media_id = ?
+      WHERE r.enabled = 1 AND (rm.media_id IS NOT NULL OR r.all_media = 1)
+      ORDER BY is_global ASC, r.id DESC`
+  )
+    .bind(mediaId)
+    .all();
+  return results.find((rule) => keywordMatches(comment, JSON.parse(rule.keywords))) ?? null;
+}
+
+// Lowercase and turn punctuation/emoji into spaces, so "Link!!" and "link 🙏" both match "LINK".
+function normalize(s) {
+  const words = String(s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
+  return ` ${words} `;
+}
+
+function keywordMatches(normalizedComment, keywords) {
+  return keywords.some((keyword) => {
+    const k = normalize(keyword).trim();
+    return k && normalizedComment.includes(` ${k} `);
+  });
+}
+
+// ---------------------------------------------------------------- Instagram API
+
+async function graph(env, method, path, { params = {}, body } = {}) {
+  const url = new URL(GRAPH + path);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  url.searchParams.set("access_token", await getToken(env));
+  const res = await fetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    throw new Error(data.error?.message || `Instagram API returned HTTP ${res.status}`);
+  }
+  return data;
+}
+
+// The token from `wrangler secret put IG_ACCESS_TOKEN` is the starting point; refreshed
+// copies live in D1. Putting a new secret overrides any refreshed copy of an older one.
+async function getToken(env) {
+  if (!env.IG_ACCESS_TOKEN) throw new Error("No Instagram access token configured (IG_ACCESS_TOKEN)");
+  const source = await fingerprint(env.IG_ACCESS_TOKEN);
+  const [stored, storedSource] = await Promise.all([
+    getSetting(env, "access_token"),
+    getSetting(env, "token_source"),
+  ]);
+  return stored && storedSource === source ? stored : env.IG_ACCESS_TOKEN;
+}
+
+async function refreshToken(env) {
+  const current = await getToken(env);
+  const res = await fetch(
+    `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(current)}`
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.error?.message || `Token refresh failed with HTTP ${res.status}`);
+  }
+  await setSettings(env, {
+    access_token: data.access_token,
+    token_source: await fingerprint(env.IG_ACCESS_TOKEN),
+    token_refreshed_at: String(Date.now()),
+    token_expires_at: String(Date.now() + (data.expires_in ?? 0) * 1000),
+  });
+}
+
+async function loadAccount(env) {
+  const me = await graph(env, "GET", "/me", { params: { fields: "user_id,username,profile_picture_url" } });
+  await setSettings(env, { ig_user_id: String(me.user_id), ig_username: me.username ?? "" });
+  return me;
+}
+
+async function maintenance(env) {
+  try {
+    const last = Number(await getSetting(env, "token_refreshed_at")) || 0;
+    if (Date.now() - last > TOKEN_REFRESH_DAYS * 86400e3) {
+      await refreshToken(env);
+      await logActivity(env, "info", "Instagram access token refreshed");
+    }
+  } catch (err) {
+    await logActivity(env, "error", `Token refresh failed: ${err.message}`);
+  }
+  try {
+    await loadAccount(env);
+  } catch (err) {
+    console.error("Could not load account", err);
+  }
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM sent WHERE created_at < ?").bind(now - 180 * 86400e3),
+    env.DB.prepare("DELETE FROM activity WHERE ts < ?").bind(now - 30 * 86400e3),
+  ]);
+}
+
+// ---------------------------------------------------------------- admin API
+
+async function adminApi(request, env, route) {
+  const method = request.method;
+
+  if (route === "login" && method === "POST") {
+    if (!env.ADMIN_PASSWORD) return json({ error: "ADMIN_PASSWORD is not set" }, 500);
+    const { password } = await readJson(request);
+    if (typeof password !== "string" || !timingSafeEqualStr(password, env.ADMIN_PASSWORD)) {
+      await new Promise((r) => setTimeout(r, 800));
+      return json({ error: "Wrong password" }, 401);
+    }
+    const expires = Date.now() + SESSION_DAYS * 86400e3;
+    const session = `${expires}.${await hmacHex(env.ADMIN_PASSWORD, `session:${expires}`)}`;
+    return json({ ok: true }, 200, {
+      "Set-Cookie": `session=${session}; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=${SESSION_DAYS * 86400}`,
+    });
+  }
+  if (route === "logout" && method === "POST") {
+    return json({ ok: true }, 200, {
+      "Set-Cookie": "session=; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=0",
+    });
+  }
+
+  if (!(await validSession(request, env))) return json({ error: "Not logged in" }, 401);
+
+  if (route === "status" && method === "GET") {
+    let account = null;
+    let accountError = null;
+    try {
+      account = await loadAccount(env);
+    } catch (err) {
+      accountError = err.message;
+    }
+    const counts = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM rules WHERE enabled = 1) AS active_rules,
+              (SELECT COUNT(*) FROM sent WHERE created_at > ?) AS sent_7d`
+    )
+      .bind(Date.now() - 7 * 86400e3)
+      .first();
+    return json({
+      account: account && { id: String(account.user_id), username: account.username, picture: account.profile_picture_url },
+      accountError,
+      tokenExpiresAt: Number(await getSetting(env, "token_expires_at")) || null,
+      ...counts,
+    });
+  }
+
+  if (route === "media" && method === "GET") {
+    const after = new URL(request.url).searchParams.get("after");
+    const params = {
+      fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp",
+      limit: "30",
+    };
+    if (after) params.after = after;
+    const data = await graph(env, "GET", "/me/media", { params });
+    return json({ items: data.data ?? [], next: data.paging?.next ? data.paging.cursors?.after : null });
+  }
+
+  if (route === "rules" && method === "GET") return json({ rules: await listRules(env) });
+
+  if (route === "rules" && method === "POST") {
+    const body = await readJson(request);
+    const inputs = Array.isArray(body.rules) ? body.rules : [body];
+    const ids = [];
+    for (const input of inputs) ids.push(await saveRule(env, null, validateRule(input)));
+    return json({ ok: true, ids });
+  }
+
+  const ruleMatch = route.match(/^rules\/(\d+)$/);
+  if (ruleMatch && method === "PUT") {
+    const id = Number(ruleMatch[1]);
+    await requireRule(env, id);
+    await saveRule(env, id, validateRule(await readJson(request)));
+    return json({ ok: true });
+  }
+  if (ruleMatch && method === "DELETE") {
+    const id = Number(ruleMatch[1]);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM rule_media WHERE rule_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM rules WHERE id = ?").bind(id),
+    ]);
+    return json({ ok: true });
+  }
+
+  if (route === "activity" && method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM activity ORDER BY id DESC LIMIT 100").all();
+    return json({ activity: results });
+  }
+
+  if (route === "test" && method === "POST") {
+    const { media_id, text } = await readJson(request);
+    const rule = await findRule(env, String(media_id ?? ""), String(text ?? ""));
+    return json({ rule: rule && { id: rule.id, keywords: JSON.parse(rule.keywords), message: rule.message, public_reply: rule.public_reply, all_media: !!rule.all_media } });
+  }
+
+  return json({ error: "Not found" }, 404);
+}
+
+function validateRule(input) {
+  const keywords = (Array.isArray(input.keywords) ? input.keywords : String(input.keywords ?? "").split(","))
+    .map((k) => String(k).trim())
+    .filter(Boolean);
+  const message = String(input.message ?? "").trim();
+  const publicReply = String(input.public_reply ?? "").trim();
+  const allMedia = !!input.all_media;
+  const media = (Array.isArray(input.media) ? input.media : [])
+    .filter((m) => m && m.id)
+    .map((m) => ({ id: String(m.id), caption: truncate(m.caption ?? "", 200), permalink: m.permalink ?? null }));
+
+  if (!keywords.length) throw httpError(400, "Add at least one keyword");
+  if (!message) throw httpError(400, "The DM message is empty");
+  if (message.length > MAX_MESSAGE) throw httpError(400, `The DM message is longer than ${MAX_MESSAGE} characters`);
+  if (publicReply.length > MAX_PUBLIC_REPLY) throw httpError(400, `The public reply is longer than ${MAX_PUBLIC_REPLY} characters`);
+  if (!allMedia && !media.length) throw httpError(400, "Pick at least one post, or apply the rule to all posts");
+  return { keywords, message, publicReply, allMedia, media, enabled: input.enabled !== false };
+}
+
+async function saveRule(env, id, r) {
+  const now = Date.now();
+  if (id == null) {
+    const row = await env.DB.prepare(
+      `INSERT INTO rules (keywords, message, public_reply, all_media, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`
+    )
+      .bind(JSON.stringify(r.keywords), r.message, r.publicReply || null, r.allMedia ? 1 : 0, r.enabled ? 1 : 0, now, now)
+      .first();
+    id = row.id;
+  } else {
+    await env.DB.prepare(
+      `UPDATE rules SET keywords = ?, message = ?, public_reply = ?, all_media = ?, enabled = ?, updated_at = ? WHERE id = ?`
+    )
+      .bind(JSON.stringify(r.keywords), r.message, r.publicReply || null, r.allMedia ? 1 : 0, r.enabled ? 1 : 0, now, id)
+      .run();
+  }
+  const statements = [env.DB.prepare("DELETE FROM rule_media WHERE rule_id = ?").bind(id)];
+  if (!r.allMedia) {
+    for (const m of r.media) {
+      statements.push(
+        env.DB.prepare("INSERT INTO rule_media (rule_id, media_id, caption, permalink) VALUES (?, ?, ?, ?)").bind(
+          id,
+          m.id,
+          m.caption,
+          m.permalink
+        )
+      );
+    }
+  }
+  await env.DB.batch(statements);
+  return id;
+}
+
+async function requireRule(env, id) {
+  const row = await env.DB.prepare("SELECT id FROM rules WHERE id = ?").bind(id).first();
+  if (!row) throw httpError(404, "Rule not found");
+}
+
+async function listRules(env) {
+  const [{ results: rules }, { results: media }, { results: counts }] = await env.DB.batch([
+    env.DB.prepare("SELECT * FROM rules ORDER BY id DESC"),
+    env.DB.prepare("SELECT * FROM rule_media"),
+    env.DB.prepare("SELECT rule_id, COUNT(*) AS n FROM sent GROUP BY rule_id"),
+  ]);
+  const sentByRule = Object.fromEntries(counts.map((c) => [c.rule_id, c.n]));
+  return rules.map((r) => ({
+    id: r.id,
+    keywords: JSON.parse(r.keywords),
+    message: r.message,
+    public_reply: r.public_reply,
+    all_media: !!r.all_media,
+    enabled: !!r.enabled,
+    sent: sentByRule[r.id] ?? 0,
+    media: media.filter((m) => m.rule_id === r.id).map((m) => ({ id: m.media_id, caption: m.caption, permalink: m.permalink })),
+  }));
+}
+
+async function validSession(request, env) {
+  if (!env.ADMIN_PASSWORD) return false;
+  const cookie = request.headers.get("cookie") || "";
+  const match = cookie.match(/(?:^|;\s*)session=([^;]+)/);
+  if (!match) return false;
+  const [expires, sig] = match[1].split(".");
+  if (!expires || !sig || Number(expires) < Date.now()) return false;
+  return timingSafeEqualStr(sig, await hmacHex(env.ADMIN_PASSWORD, `session:${expires}`));
+}
+
+// ---------------------------------------------------------------- storage helpers
+
+async function getSetting(env, key) {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first();
+  return row?.value ?? null;
+}
+
+async function setSettings(env, values) {
+  await env.DB.batch(
+    Object.entries(values).map(([k, v]) =>
+      env.DB.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).bind(k, v)
+    )
+  );
+}
+
+async function logActivity(env, level, text, mediaId = null) {
+  await env.DB.prepare("INSERT INTO activity (ts, level, media_id, text) VALUES (?, ?, ?, ?)")
+    .bind(Date.now(), level, mediaId, text)
+    .run();
+}
+
+// ---------------------------------------------------------------- utilities
+
+async function hmacHex(secret, message) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function fingerprint(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqualStr(a, b) {
+  const ea = new TextEncoder().encode(a);
+  const eb = new TextEncoder().encode(b);
+  if (ea.byteLength !== eb.byteLength) return false;
+  return crypto.subtle.timingSafeEqual(ea, eb);
+}
+
+function truncate(s, n) {
+  s = String(s);
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+function httpError(status, message) {
+  return Object.assign(new Error(message), { status });
+}
+
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    throw httpError(400, "Invalid JSON body");
+  }
+}
+
+function json(data, status = 200, headers = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...headers },
+  });
+}
+
+function htmlResponse(body) {
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function legalPage(title, bodyHtml) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#1c1c1e;background:#fff}
+h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:1.6em}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}a{color:#8ab4ff}}</style></head>
+<body>${bodyHtml}</body></html>`;
+}
+
+function privacyPage(env) {
+  const name = escapeHtml(env.ACCOUNT_NAME || "this Instagram account");
+  const email = escapeHtml(env.CONTACT_EMAIL || "");
+  return legalPage(
+    "Privacy Policy",
+    `<h1>Privacy Policy</h1>
+<p>This service is an automated assistant operated by <strong>${name}</strong> on Instagram. When you comment a keyword on one of our posts, it sends you a direct message with the link or information you asked for.</p>
+<h2>What we process</h2>
+<p>When you comment on our posts, Instagram sends us your Instagram user ID, username, the comment text and the post it was made on. We use this only to decide whether to send you the requested message.</p>
+<h2>What we store</h2>
+<p>If we send you a message, we keep your Instagram user ID, the comment ID and the post ID for up to 180 days so you do not receive the same message twice, plus a short activity log for up to 30 days. We do not store your messages, profile or any other data.</p>
+<h2>Sharing</h2>
+<p>We do not sell or share your data with anyone. Data is processed on Cloudflare's infrastructure, which hosts this service.</p>
+<h2>Your rights and deletion</h2>
+<p>You can ask us to delete any data about you at any time. See our <a href="/data-deletion">data deletion instructions</a>.</p>
+<h2>Contact</h2>
+<p>${email ? `Email: <a href="mailto:${email}">${email}</a>` : `Send a direct message to ${name} on Instagram.`}</p>`
+  );
+}
+
+function deletionPage(env) {
+  const name = escapeHtml(env.ACCOUNT_NAME || "this Instagram account");
+  const email = escapeHtml(env.CONTACT_EMAIL || "");
+  return legalPage(
+    "Data Deletion",
+    `<h1>Data Deletion Instructions</h1>
+<p>To delete the data this service holds about you (your Instagram user ID and the IDs of comments that triggered a message):</p>
+<ol>
+<li>${email ? `Email <a href="mailto:${email}">${email}</a>` : `Send a direct message to ${name} on Instagram`} with the subject "Data deletion" and your Instagram username.</li>
+<li>We delete your data within 30 days and confirm by reply.</li>
+</ol>
+<p>Data is also deleted automatically after 180 days.</p>`
+  );
+}

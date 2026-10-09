@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ig-comment-bot",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+
+  // Daily: refresh the Instagram token and clean up old records.
+  "triggers": { "crons": ["17 4 * * *"] },
+
+  // Shown on the public privacy and data-deletion pages Meta requires.
+  "vars": {
+    "ACCOUNT_NAME": "statixcodes",
+    "CONTACT_EMAIL": "you@example.com"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ig-comment-bot",
+      "database_id": "c1ac01a7-bdc2-4d20-b033-fdc0a3fae286"
+    }
+  ]
+
+  // Secrets (set with `npx wrangler secret put NAME`, never stored in this file):
+  //   IG_ACCESS_TOKEN  Instagram access token for statixcodes
+  //   APP_SECRET       Instagram app secret, used to check webhooks really come from Meta
+  //   VERIFY_TOKEN     Random string, also pasted into Meta's webhook settings
+  //   ADMIN_PASSWORD   Password for the /admin dashboard
+}

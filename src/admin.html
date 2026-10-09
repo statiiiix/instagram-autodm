@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Comment Link Bot</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --text: #1c1c1e; --muted: #6e6e73; --line: #e3e3e8;
+    --accent: #d62976; --accent-text: #ffffff; --ok: #1f8f4e; --err: #c62828; --chip: #f1e4ec;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f0f10; --card: #1c1c1e; --text: #f2f2f7; --muted: #98989f; --line: #2c2c2f;
+      --accent: #ff4f9a; --chip: #3a2330; --ok: #4cc27f; --err: #ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 120px; }
+  .hidden { display: none !important; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: .85rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 9px 14px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .btn.danger { color: var(--err); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.sm { padding: 5px 10px; font-size: .85rem; }
+  input[type=text], input[type=password], textarea, select { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+  textarea { resize: vertical; min-height: 84px; }
+  label.field { display: block; margin: 12px 0 4px; font-weight: 600; font-size: .9rem; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .spread { justify-content: space-between; }
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .acct { display: flex; align-items: center; gap: 10px; }
+  .acct img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--line); }
+  .tabs { display: flex; gap: 6px; margin: 4px 0 14px; overflow-x: auto; }
+  .tab { border: 0; background: transparent; padding: 8px 12px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .tab.active { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .stat b { display: block; font-size: 1.3rem; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; background: var(--card); padding: 7px 12px; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+  .list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .media { display: grid; grid-template-columns: auto 64px 1fr; gap: 12px; align-items: start; }
+  .media input[type=checkbox] { width: 20px; height: 20px; margin-top: 22px; accent-color: var(--accent); }
+  .thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--line); display: block; }
+  .cap { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 2px 9px; font-size: .8rem; font-weight: 600; }
+  .chip.off { opacity: .5; text-decoration: line-through; }
+  .quick { grid-column: 2 / 4; display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .bar .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .rule h3 { margin: 0; font-size: 1rem; }
+  .rule .msg { white-space: pre-wrap; word-break: break-word; margin: 8px 0; }
+  .mini { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; background: var(--line); }
+  .log { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .log:last-child { border-bottom: 0; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; background: var(--ok); }
+  .dot.error { background: var(--err); } .dot.warn { background: #e0a100; }
+  dialog { border: 0; border-radius: var(--radius); padding: 0; width: min(560px, calc(100vw - 24px)); background: var(--card); color: var(--text); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog form { padding: 18px; }
+  .toast { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 10; max-width: calc(100vw - 32px); }
+  .toast.err { background: var(--err); color: #fff; }
+  .center { text-align: center; }
+  .login { max-width: 360px; margin: 12vh auto 0; }
+  .empty { padding: 26px; text-align: center; color: var(--muted); }
+  .result { margin-top: 12px; }
+  a { color: var(--accent); }
+  @media (max-width: 520px) { .quick { grid-template-columns: 1fr; } .stats b { font-size: 1.1rem; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section id="login-view" class="login hidden">
+    <div class="card">
+      <h1>Comment Link Bot</h1>
+      <p class="muted small">Enter your dashboard password.</p>
+      <form id="login-form">
+        <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
+        <button class="btn primary" style="width:100%;margin-top:10px">Log in</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="app-view" class="hidden">
+    <header class="top">
+      <div class="acct">
+        <img id="acct-pic" alt="">
+        <div>
+          <h1 id="acct-name">Comment Link Bot</h1>
+          <div id="acct-sub" class="muted small"></div>
+        </div>
+      </div>
+      <button class="btn sm" id="logout">Log out</button>
+    </header>
+
+    <div class="stats">
+      <div class="card stat"><b id="st-rules">–</b><span class="muted small">active rules</span></div>
+      <div class="card stat"><b id="st-sent">–</b><span class="muted small">DMs, last 7 days</span></div>
+      <div class="card stat"><b id="st-token">–</b><span class="muted small">token renews</span></div>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="posts">Posts</button>
+      <button class="tab" data-tab="rules">Rules</button>
+      <button class="tab" data-tab="activity">Activity</button>
+      <button class="tab" data-tab="test">Test</button>
+    </nav>
+
+    <!-- Posts -->
+    <section id="tab-posts">
+      <div class="row spread" style="flex-wrap:wrap">
+        <div class="seg">
+          <button data-filter="all" class="on">All posts</button>
+          <button data-filter="norule">Without a rule</button>
+        </div>
+        <label class="row small"><input type="checkbox" id="quick-toggle"> Quick-fill</label>
+      </div>
+      <p id="quick-help" class="muted small hidden">Type a keyword and message next to each post, then press <b>Save quick rules</b> once.</p>
+      <div id="media-list" class="list"></div>
+      <div class="center" style="margin-top:12px"><button class="btn hidden" id="more">Load more posts</button></div>
+    </section>
+
+    <!-- Rules -->
+    <section id="tab-rules" class="hidden">
+      <div class="row spread">
+        <span class="muted small">Rules on a specific post win over "all posts" rules.</span>
+        <button class="btn sm primary" id="new-global">+ Rule for all posts</button>
+      </div>
+      <div id="rule-list" class="list"></div>
+    </section>
+
+    <!-- Activity -->
+    <section id="tab-activity" class="hidden">
+      <div class="row spread"><span class="muted small">Last 100 events</span><button class="btn sm" id="refresh-activity">Refresh</button></div>
+      <div class="card" style="margin-top:12px" id="activity-list"></div>
+    </section>
+
+    <!-- Test -->
+    <section id="tab-test" class="hidden">
+      <div class="card">
+        <p class="muted small" style="margin-top:0">Check which rule a comment would trigger. Nothing is sent.</p>
+        <label class="field" for="test-media">Post</label>
+        <select id="test-media"></select>
+        <label class="field" for="test-text">Comment</label>
+        <input type="text" id="test-text" placeholder="e.g. LINK please!">
+        <button class="btn primary" id="test-run" style="margin-top:12px">Check</button>
+        <div id="test-result" class="result"></div>
+      </div>
+    </section>
+  </section>
+</div>
+
+<div class="bar hidden" id="bar">
+  <div class="inner">
+    <span id="bar-text" class="small"></span>
+    <div class="row">
+      <button class="btn sm" id="bar-clear">Clear</button>
+      <button class="btn primary sm" id="bar-action"></button>
+    </div>
+  </div>
+</div>
+
+<dialog id="rule-dialog">
+  <form method="dialog" id="rule-form">
+    <h1 id="rule-title">New rule</h1>
+    <p id="rule-scope" class="muted small"></p>
+    <label class="field" for="f-keywords">Keywords</label>
+    <input type="text" id="f-keywords" placeholder="LINK, GUIDE" required>
+    <div class="muted small">Separate several with commas. Matching ignores capitals, punctuation and emoji.</div>
+    <label class="field" for="f-message">DM message</label>
+    <textarea id="f-message" maxlength="1000" placeholder="Here's the link 👉 https://…" required></textarea>
+    <label class="field" for="f-reply">Public reply under the comment (optional)</label>
+    <input type="text" id="f-reply" maxlength="300" placeholder="Sent you a DM 📩">
+    <label class="row small" style="margin-top:12px"><input type="checkbox" id="f-all"> Apply to all posts</label>
+    <label class="row small" style="margin-top:6px"><input type="checkbox" id="f-enabled" checked> Enabled</label>
+    <div id="f-media" class="chips"></div>
+    <div class="row spread" style="margin-top:18px">
+      <button class="btn danger hidden" id="rule-delete" type="button">Delete</button>
+      <div class="row" style="margin-left:auto">
+        <button class="btn" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" id="rule-save" value="save">Save</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+const state = { media: [], next: null, rules: [], selected: new Set(), filter: "all", quick: false, editing: null, dialogMedia: [] };
+
+async function api(path, opts = {}) {
+  const res = await fetch(`/admin/api/${path}`, {
+    method: opts.method || "GET",
+    headers: opts.body ? { "Content-Type": "application/json" } : {},
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    credentials: "same-origin",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && path !== "login") { showLogin(); throw new Error("Please log in"); }
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function toast(text, isErr = false) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " err" : "");
+  el.textContent = text;
+  document.body.append(el);
+  setTimeout(() => el.remove(), isErr ? 5000 : 2500);
+}
+
+function showLogin() { $("#login-view").classList.remove("hidden"); $("#app-view").classList.add("hidden"); $("#bar").classList.add("hidden"); }
+
+$("#login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { await api("login", { method: "POST", body: { password: $("#password").value } }); $("#password").value = ""; start(); }
+  catch (err) { toast(err.message, true); }
+});
+$("#logout").addEventListener("click", async () => { await api("logout", { method: "POST" }).catch(() => {}); showLogin(); });
+
+async function start() {
+  try { await loadStatus(); } catch { return; }
+  $("#login-view").classList.add("hidden");
+  $("#app-view").classList.remove("hidden");
+  await Promise.all([loadRules(), loadMedia(true)]);
+}
+
+async function loadStatus() {
+  const s = await api("status");
+  if (s.account) {
+    $("#acct-name").textContent = "@" + s.account.username;
+    $("#acct-pic").src = s.account.picture || "";
+    $("#acct-sub").textContent = "Comment Link Bot";
+  } else {
+    $("#acct-name").textContent = "Not connected";
+    $("#acct-sub").textContent = s.accountError || "";
+  }
+  $("#st-rules").textContent = s.active_rules ?? 0;
+  $("#st-sent").textContent = s.sent_7d ?? 0;
+  $("#st-token").textContent = s.tokenExpiresAt ? "auto" : "pending";
+}
+
+// ---------- posts
+function thumbOf(m) { return m.thumbnail_url || m.media_url || ""; }
+function rulesFor(id) { return state.rules.filter((r) => !r.all_media && r.media.some((m) => m.id === id)); }
+
+async function loadMedia(reset) {
+  try {
+    const data = await api("media" + (!reset && state.next ? `?after=${encodeURIComponent(state.next)}` : ""));
+    state.media = reset ? data.items : state.media.concat(data.items);
+    state.next = data.next;
+    renderMedia(); renderTestOptions();
+  } catch (err) { $("#media-list").innerHTML = `<div class="card empty">Could not load posts: ${esc(err.message)}</div>`; }
+}
+
+function renderMedia() {
+  const list = state.media.filter((m) => state.filter === "all" || rulesFor(m.id).length === 0);
+  $("#more").classList.toggle("hidden", !state.next);
+  if (!list.length) { $("#media-list").innerHTML = `<div class="card empty">${state.media.length ? "Every loaded post has a rule 🎉" : "No posts found."}</div>`; return; }
+  $("#media-list").innerHTML = list.map((m) => {
+    const rules = rulesFor(m.id);
+    const date = m.timestamp ? new Date(m.timestamp).toLocaleDateString() : "";
+    const type = m.media_product_type === "REELS" ? "Reel" : (m.media_type || "").toLowerCase().replace("_", " ");
+    return `<div class="card media" data-id="${esc(m.id)}">
+      <input type="checkbox" class="pick" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Select post">
+      <a href="${esc(m.permalink)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(thumbOf(m))}" referrerpolicy="no-referrer" loading="lazy" alt=""></a>
+      <div>
+        <div class="cap">${esc(m.caption || "(no caption)")}</div>
+        <div class="muted small">${esc(type)} · ${esc(date)}</div>
+        <div class="chips">${rules.map((r) => `<button type="button" class="chip ${r.enabled ? "" : "off"}" data-rule="${r.id}">${esc(r.keywords.join(", "))}</button>`).join("")}</div>
+      </div>
+      ${state.quick ? `<div class="quick"><input type="text" class="q-kw" placeholder="Keyword"><input type="text" class="q-msg" placeholder="DM message / link"></div>` : ""}
+    </div>`;
+  }).join("");
+  updateBar();
+}
+
+$("#media-list").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("pick")) return;
+  const id = e.target.closest(".media").dataset.id;
+  e.target.checked ? state.selected.add(id) : state.selected.delete(id);
+  updateBar();
+});
+$("#media-list").addEventListener("input", (e) => { if (e.target.matches(".q-kw, .q-msg")) updateBar(); });
+$("#media-list").addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-rule]");
+  if (chip) openRule(state.rules.find((r) => r.id === Number(chip.dataset.rule)));
+});
+$("#more").addEventListener("click", () => loadMedia(false));
+document.querySelectorAll("[data-filter]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-filter]").forEach((x) => x.classList.toggle("on", x === b));
+  state.filter = b.dataset.filter; renderMedia();
+}));
+$("#quick-toggle").addEventListener("change", (e) => { state.quick = e.target.checked; $("#quick-help").classList.toggle("hidden", !state.quick); renderMedia(); });
+
+function quickRows() {
+  return [...document.querySelectorAll("#media-list .media")].map((row) => ({
+    id: row.dataset.id, kw: row.querySelector(".q-kw")?.value.trim() || "", msg: row.querySelector(".q-msg")?.value.trim() || "",
+  })).filter((r) => r.kw || r.msg);
+}
+
+function updateBar() {
+  const quick = state.quick ? quickRows() : [];
+  const bar = $("#bar");
+  if (quick.length) {
+    $("#bar-text").textContent = `${quick.length} quick rule${quick.length > 1 ? "s" : ""} filled in`;
+    $("#bar-action").textContent = "Save quick rules";
+    $("#bar-action").onclick = saveQuick;
+    bar.classList.remove("hidden");
+  } else if (state.selected.size) {
+    $("#bar-text").textContent = `${state.selected.size} post${state.selected.size > 1 ? "s" : ""} selected`;
+    $("#bar-action").textContent = "Create rule for selected";
+    $("#bar-action").onclick = () => openRule(null, [...state.selected]);
+    bar.classList.remove("hidden");
+  } else bar.classList.add("hidden");
+}
+$("#bar-clear").addEventListener("click", () => { state.selected.clear(); document.querySelectorAll(".q-kw,.q-msg").forEach((i) => (i.value = "")); renderMedia(); });
+
+async function saveQuick() {
+  const rows = quickRows();
+  const bad = rows.find((r) => !r.kw || !r.msg);
+  if (bad) return toast("Each filled post needs both a keyword and a message", true);
+  const rules = rows.map((r) => ({ keywords: r.kw, message: r.msg, media: [mediaRef(r.id)] }));
+  try {
+    await api("rules", { method: "POST", body: { rules } });
+    toast(`Saved ${rules.length} rule${rules.length > 1 ? "s" : ""}`);
+    await refreshAfterChange();
+  } catch (err) { toast(err.message, true); }
+}
+
+function mediaRef(id) {
+  const m = state.media.find((x) => x.id === id);
+  return { id, caption: m?.caption || "", permalink: m?.permalink || null };
+}
+
+// ---------- rules
+async function loadRules() { state.rules = (await api("rules")).rules; renderRules(); renderMedia(); }
+
+function renderRules() {
+  if (!state.rules.length) { $("#rule-list").innerHTML = `<div class="card empty">No rules yet. Select posts on the Posts tab to create one.</div>`; return; }
+  $("#rule-list").innerHTML = state.rules.map((r) => {
+    const thumbs = r.all_media ? `<span class="chip">All posts</span>` : r.media.map((m) => {
+      const loaded = state.media.find((x) => x.id === m.id);
+      return loaded ? `<img class="mini" src="${esc(thumbOf(loaded))}" referrerpolicy="no-referrer" title="${esc(m.caption)}" alt="">` : `<span class="chip" title="${esc(m.caption)}">post</span>`;
+    }).join("");
+    return `<div class="card rule">
+      <div class="row spread"><h3>${r.keywords.map((k) => `<span class="chip">${esc(k)}</span>`).join(" ")}</h3>
+        <div class="row"><span class="muted small">${r.sent} sent</span><button class="btn sm" data-edit="${r.id}">Edit</button></div></div>
+      <div class="msg">${esc(r.message)}</div>
+      ${r.public_reply ? `<div class="muted small">Public reply: ${esc(r.public_reply)}</div>` : ""}
+      <div class="row" style="flex-wrap:wrap;margin-top:8px">${thumbs}${r.enabled ? "" : `<span class="chip off">disabled</span>`}</div>
+    </div>`;
+  }).join("");
+}
+$("#rule-list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-edit]");
+  if (b) openRule(state.rules.find((r) => r.id === Number(b.dataset.edit)));
+});
+$("#new-global").addEventListener("click", () => openRule(null, [], true));
+
+function openRule(rule, mediaIds = [], allMedia = false) {
+  state.editing = rule || null;
+  state.dialogMedia = rule ? rule.media.map((m) => ({ ...m })) : mediaIds.map(mediaRef);
+  $("#rule-title").textContent = rule ? "Edit rule" : "New rule";
+  $("#f-keywords").value = rule ? rule.keywords.join(", ") : "";
+  $("#f-message").value = rule?.message || "";
+  $("#f-reply").value = rule?.public_reply || "";
+  $("#f-all").checked = rule ? rule.all_media : allMedia;
+  $("#f-enabled").checked = rule ? rule.enabled : true;
+  $("#rule-delete").classList.toggle("hidden", !rule);
+  renderDialogMedia();
+  $("#rule-dialog").showModal();
+}
+
+function renderDialogMedia() {
+  const all = $("#f-all").checked;
+  $("#rule-scope").textContent = all ? "Applies to every post, including future ones." : `Applies to ${state.dialogMedia.length} post${state.dialogMedia.length === 1 ? "" : "s"}.`;
+  $("#f-media").innerHTML = all ? "" : state.dialogMedia.map((m, i) =>
+    `<span class="chip">${esc((m.caption || "post").slice(0, 28))} <button type="button" data-rm="${i}" style="border:0;background:none;cursor:pointer" aria-label="Remove">✕</button></span>`).join("");
+}
+$("#f-all").addEventListener("change", renderDialogMedia);
+$("#f-media").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-rm]");
+  if (b) { state.dialogMedia.splice(Number(b.dataset.rm), 1); renderDialogMedia(); }
+});
+
+$("#rule-form").addEventListener("submit", async (e) => {
+  if (e.submitter?.value !== "save") return;
+  e.preventDefault();
+  const body = {
+    keywords: $("#f-keywords").value, message: $("#f-message").value, public_reply: $("#f-reply").value,
+    all_media: $("#f-all").checked, enabled: $("#f-enabled").checked, media: state.dialogMedia,
+  };
+  try {
+    if (state.editing) await api(`rules/${state.editing.id}`, { method: "PUT", body });
+    else await api("rules", { method: "POST", body });
+    $("#rule-dialog").close();
+    state.selected.clear();
+    toast("Rule saved");
+    await refreshAfterChange();
+  } catch (err) { toast(err.message, true); }
+});
+$("#rule-delete").addEventListener("click", async () => {
+  if (!state.editing) return;
+  try { await api(`rules/${state.editing.id}`, { method: "DELETE" }); $("#rule-dialog").close(); toast("Rule deleted"); await refreshAfterChange(); }
+  catch (err) { toast(err.message, true); }
+});
+
+async function refreshAfterChange() { await loadRules(); loadStatus().catch(() => {}); }
+
+// ---------- activity
+async function loadActivity() {
+  try {
+    const { activity } = await api("activity");
+    $("#activity-list").innerHTML = activity.length ? activity.map((a) => `<div class="log"><span class="dot ${esc(a.level)}"></span>
+      <div><div>${esc(a.text)}</div><div class="muted small">${new Date(a.ts).toLocaleString()}</div></div></div>`).join("")
+      : `<div class="empty">Nothing yet. When someone comments a keyword, it shows up here.</div>`;
+  } catch (err) { $("#activity-list").innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+}
+$("#refresh-activity").addEventListener("click", loadActivity);
+
+// ---------- test
+function renderTestOptions() {
+  $("#test-media").innerHTML = state.media.map((m) => `<option value="${esc(m.id)}">${esc((m.caption || "(no caption)").slice(0, 60))}</option>`).join("");
+}
+$("#test-run").addEventListener("click", async () => {
+  try {
+    const { rule } = await api("test", { method: "POST", body: { media_id: $("#test-media").value, text: $("#test-text").value } });
+    $("#test-result").innerHTML = rule
+      ? `<div class="card"><b>Would send:</b><div class="msg" style="white-space:pre-wrap">${esc(rule.message)}</div><div class="muted small">Matched rule: ${esc(rule.keywords.join(", "))}${rule.all_media ? " (all posts)" : ""}</div></div>`
+      : `<div class="card muted">No rule matches. Nothing would be sent.</div>`;
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- tabs
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+  for (const name of ["posts", "rules", "activity", "test"]) $(`#tab-${name}`).classList.toggle("hidden", t.dataset.tab !== name);
+  $("#bar").classList.toggle("hidden", t.dataset.tab !== "posts");
+  if (t.dataset.tab === "posts") updateBar();
+  if (t.dataset.tab === "activity") loadActivity();
+}));
+
+start();
+</script>
+</body>
+</html>
