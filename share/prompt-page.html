@@ -1,0 +1,170 @@
+<title>Comment-to-DM Bot Prompt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow reading column; a sticky copy bar sits above the prompt so the main action is never far away. */
+:root {
+  --bg: #ffffff; --fg: #0a0a0a; --muted: #5c5c63; --line: #e6e6e9; --well: #f6f6f7;
+  --btn: #0a0a0a; --btn-fg: #ffffff; --ok: #1f7a4a;
+  --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0b0b0c; --fg: #f2f2f3; --muted: #9a9aa2; --line: #26262a; --well: #141416;
+  --btn: #f2f2f3; --btn-fg: #0b0b0c; --ok: #5fd39a; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0b0b0c; --fg: #f2f2f3; --muted: #9a9aa2; --line: #26262a; --well: #141416;
+  --btn: #f2f2f3; --btn-fg: #0b0b0c; --ok: #5fd39a; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 20px; padding-block: 56px 80px; display: grid; gap: 40px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(2rem, 6vw, 2.75rem); font-weight: 500; letter-spacing: -.04em; line-height: 1.05; margin: 12px 0 16px; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 60ch; margin: 0; }
+h2 { font-size: 1rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 12px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 32px; border-top: 1px solid var(--fg); padding-top: 24px; }
+ol, ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; color: var(--muted); }
+li b { color: var(--fg); font-weight: 500; }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.bar .meta { font: 13px/1.3 var(--mono); color: var(--muted); }
+button { font: 500 15px/1 var(--sans); background: var(--btn); color: var(--btn-fg); border: 0; border-radius: 999px; padding: 12px 22px; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+.status { font-size: 13px; color: var(--ok); min-height: 1em; }
+pre { margin: 0; background: var(--well); border: 1px solid var(--line); border-radius: 12px; padding: 20px; font: 13px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; overflow-x: auto; max-height: 70vh; overflow-y: auto; }
+.note { font-size: 14px; color: var(--muted); border-left: 2px solid var(--fg); padding-left: 14px; margin: 0; }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 20px; }
+@media (prefers-reduced-motion: no-preference) { button { transition: transform .12s ease; } button:active { transform: scale(.97); } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Instagram comment → DM · $0/month</div>
+    <h1>Build your own ManyChat with one prompt</h1>
+    <p class="lede">Paste this into Claude (or any AI agent that can run a terminal and, ideally, control your browser). It builds a bot that DMs a link to anyone who comments your keyword, with a phone dashboard, per-reel links and an optional follow check. It runs free on Cloudflare and talks to Instagram through your own Meta app.</p>
+  </header>
+
+  <section class="cols" aria-label="Before you start">
+    <div>
+      <h2>You need</h2>
+      <ul>
+        <li><b>Instagram Professional</b> account (Creator or Business)</li>
+        <li>A <b>Facebook</b> login, used only to own the app</li>
+        <li>A free <b>Cloudflare</b> account</li>
+        <li>A computer with <b>Node.js 18+</b></li>
+        <li>A second Instagram account for testing</li>
+      </ul>
+    </div>
+    <div>
+      <h2>How to use it</h2>
+      <ol>
+        <li><b>Copy</b> the prompt below.</li>
+        <li>Paste it into an AI agent with terminal access, such as Claude Code. Browser control makes the Meta setup hands-off.</li>
+        <li>You type your own passwords, codes and secrets. The AI does the rest and tells you when to click.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-label="The prompt">
+    <div class="bar">
+      <span class="meta">build-prompt.md · 1,092 words</span>
+      <span class="status" id="status" role="status"></span>
+      <button id="copy" type="button">Copy prompt</button>
+    </div>
+    <pre id="prompt" tabindex="0"># Build me a free ManyChat-style Instagram comment-to-DM bot
+
+You&#x27;re an AI agent helping me build my own Instagram bot: when someone comments a keyword on my post, they get a DM with the link I set for that post, optionally only if they follow me. It must cost $0/month (Cloudflare Workers + D1 free plan, Meta&#x27;s API is free), run 24/7 without my computer, and be managed from a password-protected dashboard on my phone. I&#x27;m not a developer, so give me short, numbered steps whenever I need to do something.
+
+## Rules
+
+- Use the terminal for code and deploys. If you can control my browser (Claude in Chrome, Playwright, computer use), handle the Meta and Cloudflare navigation and fill in non-secret fields. If you can&#x27;t, guide me click by click.
+- **I type every password, security code and secret myself.** Never ask me to paste one into the chat. For secrets, start `npx wrangler secret put NAME` and I&#x27;ll paste into that prompt.
+- **I click anything that accepts terms, grants roles or publishes.** Tell me what it does first. I also create my own accounts.
+- Take a fresh screenshot before every click. Meta&#x27;s pages shift while loading, so click by element reference when you can.
+- If more than one browser or Chrome profile is connected, ask me which one to use.
+
+## What I need (confirm before deploying)
+
+An Instagram **Professional** account (Creator or Business); a Facebook login (used only to own the app, no Page needed); a free Cloudflare account; Node.js 18+; and a second Instagram account for testing.
+
+## Build it
+
+A Cloudflare Worker (`src/index.js`), a dashboard page (`src/admin.html`), a D1 database, and `wrangler.jsonc` with a daily cron. Secrets: `IG_ACCESS_TOKEN`, `APP_SECRET`, `VERIFY_TOKEN`, `ADMIN_PASSWORD`. Store everything in D1, not KV: KV&#x27;s free plan only allows about 1,000 writes a day.
+
+**Instagram API (Instagram Login), base `https://graph.instagram.com/vXX.X`.** Use the version shown in the app&#x27;s Webhooks panel and pass `access_token` as a query parameter.
+- `GET /webhook`: return `hub.challenge` if `hub.verify_token` matches, otherwise 403.
+- `POST /webhook`: check `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with `APP_SECRET`) and return 401 if it fails. Return 200 at once and do the work in `ctx.waitUntil`.
+  - Comments arrive in `entry[].changes[]` (`field: &quot;comments&quot;`, with `value.id`, `text`, `from.id/username`, `media.id`). `entry.id` is my account.
+  - Button taps and replies arrive in `entry[].messaging[]`. Ignore `is_echo`.
+- DM a commenter: `POST /{my-id}/messages` with `{&quot;recipient&quot;:{&quot;comment_id&quot;:…},&quot;message&quot;:{…}}`. Only one of these is allowed per comment. After they reply or tap a button, use `{&quot;recipient&quot;:{&quot;id&quot;:…}}`.
+- Optional public reply: `POST /{comment-id}/replies?message=…`
+- My posts: `GET /me/media?fields=id,caption,media_type,thumbnail_url,media_url,permalink,timestamp`
+- Follow check: `GET /{user-id}?fields=is_user_follow_business`. Instagram may refuse until the person has messaged me.
+- Token refresh (tokens last ~60 days): `GET /refresh_access_token?grant_type=ig_refresh_token`. Do it weekly from the cron, store the result in D1, and let a newly set secret take over again.
+
+**Behaviour**
+- Ignore my own comments.
+- Match keywords loosely: ignore case, punctuation and emoji, and work with any language.
+- A rule set on the specific post beats an &quot;all posts&quot; rule.
+- Each person gets a rule&#x27;s DM once per post. Record it before sending, and remove the record if the send fails.
+- **Follow gate:** first run the follow check. If they follow, send the link immediately. If not, or if Instagram won&#x27;t say, DM a &quot;follow me, then tap&quot; message with a quick-reply button (`payload: gate:&lt;rule&gt;:&lt;post&gt;`). On a tap, or any reply, check again and send the link, or the not-following message with the button again.
+- Log every send and error to an activity table.
+
+**Dashboard (`/admin`, password + signed HttpOnly cookie, phone-first)**
+- Shows my posts with thumbnails.
+- Tick several posts and create one rule for all of them; or quick-fill a keyword and link on many posts and save them all at once.
+- Rule settings: keywords, DM, optional public reply, &quot;Only send to followers&quot;, all posts.
+- Tabs: Rules, Activity, and a Test tab that sends nothing.
+- Escape all captions and messages.
+
+**Public pages Meta requires:** `/privacy` and `/data-deletion` (what&#x27;s stored, how long it&#x27;s kept, and my contact email).
+
+## Deploy (Cloudflare)
+
+1. `npx wrangler login`. Warn me to click **Allow within about 2 minutes**, or it times out with &quot;localhost refused to connect&quot;; if so, just rerun it.
+2. `npx wrangler d1 create`, apply the schema with `--remote`, then `npx wrangler deploy`.
+3. Generate the verify token yourself (`openssl rand -hex 24`), save it to a gitignored file, and set it as the `VERIFY_TOKEN` secret.
+4. I set `ADMIN_PASSWORD` in an interactive prompt. Remind me to write it down, because it can&#x27;t be shown again.
+
+## Meta app (developers.facebook.com/apps)
+
+1. If I&#x27;m not a developer yet, I register myself. **Create App**: a name without &quot;Instagram&quot;, &quot;IG&quot;, &quot;Facebook&quot; or &quot;Meta&quot;; the use case is **only** &quot;Manage messaging &amp; content on Instagram&quot; (switch the filter to *All* to find it); choose &quot;don&#x27;t connect a business portfolio&quot;; I click the final **Create app**.
+2. Customize the use case → **API setup with Instagram login**. The sections are collapsed, so expand each one first.
+   - **Add all required permissions.**
+   - **App roles → Add People → Instagram Tester → my username** (I click this). I accept the invite at instagram.com/accounts/manage_access → Tester invites.
+   - **Add account.** I log in to Instagram in the popup.
+3. I copy the **Instagram app secret** (top of that page, &quot;Show&quot;) into `wrangler secret put APP_SECRET`.
+4. **Webhooks**: you fill in the Callback URL (`https://&lt;worker&gt;/webhook`). Copy the verify token to my clipboard. Chrome tends to autofill an email into that box, so tell me to clear it and paste. I click **Verify and save**. Make sure **comments** and **messages** are subscribed.
+5. I click **Generate token** and paste it into `wrangler secret put IG_ACCESS_TOKEN`. Then switch the account&#x27;s webhook toggle to **On**.
+6. **App settings → Basic**: privacy URL, data-deletion URL, category &quot;Business and pages&quot;, **Save**. Then **Publish**: webhooks only arrive when the app is published. No App Review is needed for my own account. I click it.
+
+## Test and finish
+
+Log in to the dashboard and confirm my posts load. Create a rule. Comment from my second account while you watch `npx wrangler tail`. Then test the follow gate both as a follower and as a non-follower. If a DM doesn&#x27;t arrive, check the activity log first.
+
+You&#x27;re done when real comments trigger DMs, the follow gate works both ways, no secret appears in any file or chat, and you&#x27;ve given me a two-line &quot;new reel → tick the post → keyword + link → Save&quot; guide.
+</pre>
+  </section>
+
+  <p class="note">Meta's screens change often. If a button has moved, the prompt tells your AI to take a fresh look and adapt instead of guessing. Never paste your app secret or access token into a chat.</p>
+
+  <footer>Built with Claude by @statixcodes. Comment-to-DM on Instagram via Meta's official API.</footer>
+</div>
+
+<script>
+const btn = document.getElementById("copy");
+const status = document.getElementById("status");
+const pre = document.getElementById("prompt");
+btn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(pre.textContent);
+    status.textContent = "Copied. Paste it into your AI.";
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+    status.textContent = "Selected. Press ⌘C / Ctrl+C to copy.";
+  }
+  setTimeout(() => (status.textContent = ""), 4000);
+});
+</script>

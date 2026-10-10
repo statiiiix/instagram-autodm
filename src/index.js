@@ -1,6 +1,10 @@
 // Instagram comment-to-DM bot: when someone comments a keyword on a post,
 // send them a private reply (DM) with the message configured for that post.
 import ADMIN_HTML from "./admin.html";
+import FAVICON_SVG from "./favicon.svg";
+
+// 180×180 PNG of favicon.svg with square corners (iOS rounds home-screen icons itself).
+const APPLE_TOUCH_ICON = "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";
 
 const GRAPH = "https://graph.instagram.com/v26.0";
 const SESSION_DAYS = 30;
@@ -22,6 +26,8 @@ export default {
       if (path === "/privacy") return htmlResponse(privacyPage(env));
       if (path === "/data-deletion") return htmlResponse(deletionPage(env));
       if (path === "/admin") return htmlResponse(ADMIN_HTML);
+      if (path === "/favicon.svg" || path === "/favicon.ico") return iconResponse(FAVICON_SVG, "image/svg+xml");
+      if (path === "/apple-touch-icon.png") return iconResponse(Uint8Array.from(atob(APPLE_TOUCH_ICON), (c) => c.charCodeAt(0)), "image/png");
       if (path.startsWith("/admin/api/")) {
         return await adminApi(request, env, path.slice("/admin/api/".length));
       }
@@ -112,8 +118,10 @@ async function handleComment(accountId, comment, env) {
   if (!claimed.meta.changes) return; // this person already got this rule's DM on this post
 
   const who = from.username ? `@${from.username}` : `user ${from.id}`;
+  // Followers skip the button. Unknown (Instagram can't tell us yet) is treated as "not yet".
+  const alreadyFollows = rule.require_follow ? (await checkFollows(env, from.id)) === true : false;
   try {
-    if (rule.require_follow) {
+    if (rule.require_follow && !alreadyFollows) {
       await sendGate(env, accountId, { comment_id: commentId }, rule, mediaId, rule.gate_message || DEFAULT_GATE_MESSAGE);
       await env.DB.prepare(
         "INSERT OR REPLACE INTO pending (user_id, rule_id, media_id, username, created_at) VALUES (?, ?, ?, ?, ?)"
@@ -140,7 +148,7 @@ async function handleComment(accountId, comment, env) {
       note = ` (public reply failed: ${err.message})`;
     }
   }
-  const what = rule.require_follow ? "Follow check sent to" : "DM sent to";
+  const what = !rule.require_follow ? "DM sent to" : alreadyFollows ? "Already follows you, DM sent to" : "Follow check sent to";
   await logActivity(env, "info", `${what} ${who} for comment "${truncate(text, 80)}"${note}`, mediaId);
 }
 
@@ -153,6 +161,17 @@ async function handleComment(accountId, comment, env) {
 const DEFAULT_GATE_MESSAGE = "Follow me first, then tap the button below and I'll send you the link 👇";
 const DEFAULT_BUTTON_LABEL = "I followed ✅";
 const DEFAULT_NOT_FOLLOWING = "Looks like you're not following yet 👀 Follow me, then tap the button again.";
+
+// true / false from Instagram, or null when it won't say (e.g. the person never messaged us).
+async function checkFollows(env, userId) {
+  try {
+    const profile = await graph(env, "GET", `/${userId}`, { params: { fields: "is_user_follow_business" } });
+    return typeof profile.is_user_follow_business === "boolean" ? profile.is_user_follow_business : null;
+  } catch (err) {
+    console.log(`Follow lookup unavailable for ${userId}: ${err.message}`);
+    return null;
+  }
+}
 
 async function sendGate(env, accountId, recipient, rule, mediaId, text) {
   const label = truncate(rule.button_label || DEFAULT_BUTTON_LABEL, 20);
@@ -197,14 +216,12 @@ async function handleMessage(accountId, event, env) {
   }
 
   const who = gate.username ? `@${gate.username}` : `user ${senderId}`;
-  let follows;
-  try {
-    const profile = await graph(env, "GET", `/${senderId}`, { params: { fields: "is_user_follow_business,username" } });
-    follows = profile.is_user_follow_business === true;
-  } catch (err) {
-    await logActivity(env, "error", `Could not check whether ${who} follows you: ${err.message}`, gate.media_id);
+  const followStatus = await checkFollows(env, senderId);
+  if (followStatus === null) {
+    await logActivity(env, "error", `Could not check whether ${who} follows you`, gate.media_id);
     return;
   }
+  const follows = followStatus;
 
   try {
     if (follows) {
@@ -621,14 +638,19 @@ function htmlResponse(body) {
   });
 }
 
+function iconResponse(body, type) {
+  return new Response(body, { headers: { "Content-Type": type, "Cache-Control": "public, max-age=604800" } });
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 
 function legalPage(title, bodyHtml) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title}</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#1c1c1e;background:#fff}
-h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:1.6em}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}a{color:#8ab4ff}}</style></head>
+<title>${title}</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{font:16px/1.65 "Geist",ui-sans-serif,system-ui,sans-serif;max-width:680px;margin:72px auto;padding:0 20px;color:#0a0a0a;background:#fff;-webkit-font-smoothing:antialiased}
+h1{font-size:2rem;font-weight:500;letter-spacing:-.04em;line-height:1.1;padding-bottom:20px;border-bottom:1px solid #0a0a0a}h2{font-size:1rem;font-weight:600;letter-spacing:-.01em;margin-top:2em}p,li{color:#3a3a3a}a{color:#0a0a0a;text-underline-offset:3px}</style></head>
 <body>${bodyHtml}</body></html>`;
 }
 

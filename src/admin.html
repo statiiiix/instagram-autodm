@@ -5,87 +5,261 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Comment Link Bot</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Link Bot">
+<meta name="theme-color" content="#ffffff">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* Mobile-first: base styles target phones; wider screens enhance below. */
   :root {
-    --bg: #f5f5f7; --card: #ffffff; --text: #1c1c1e; --muted: #6e6e73; --line: #e3e3e8;
-    --accent: #d62976; --accent-text: #ffffff; --ok: #1f8f4e; --err: #c62828; --chip: #f1e4ec;
-    --radius: 14px;
+    --bg: #ffffff; --soft: #f5f5f5; --text: #0a0a0a; --muted: #767676; --faint: #b0b0b0;
+    --line: #ececec; --line-strong: #d6d6d6; --ink: #0a0a0a; --err: #d0142c;
+    --radius: 14px; --gutter: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --ease: cubic-bezier(.2,.8,.2,1);
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0f0f10; --card: #1c1c1e; --text: #f2f2f7; --muted: #98989f; --line: #2c2c2f;
-      --accent: #ff4f9a; --chip: #3a2330; --ok: #4cc27f; --err: #ff6b6b; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-  button, input, textarea, select { font: inherit; color: inherit; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 120px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); letter-spacing: -0.006em; -webkit-font-smoothing: antialiased; overscroll-behavior-y: none; }
+  ::selection { background: var(--ink); color: #fff; }
+  button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
+  button { touch-action: manipulation; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: calc(20px + env(safe-area-inset-top)) var(--gutter) calc(170px + env(safe-area-inset-bottom)); }
   .hidden { display: none !important; }
-  h1 { font-size: 1.25rem; margin: 0; }
+  h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.025em; margin: 0; }
   .muted { color: var(--muted); }
-  .small { font-size: .85rem; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
-  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 9px 14px; cursor: pointer; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  .btn.danger { color: var(--err); }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .btn.sm { padding: 5px 10px; font-size: .85rem; }
-  input[type=text], input[type=password], textarea, select { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px 12px; }
-  textarea { resize: vertical; min-height: 84px; }
-  label.field { display: block; margin: 12px 0 4px; font-weight: 600; font-size: .9rem; }
+  .small { font-size: .82rem; }
+  .eyebrow { font-family: var(--mono); font-size: .64rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; transition: border-color .2s, box-shadow .2s; }
+
+  /* buttons: 44px+ touch targets on phones */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 999px; padding: 0 20px; cursor: pointer; font-weight: 500; font-size: .9rem; white-space: nowrap; transition: background .15s, border-color .15s, color .15s, transform .1s; }
+  .btn:active { transform: scale(.97); background: var(--soft); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .btn.primary:active { background: #2a2a2a; }
+  .btn.danger { color: var(--err); border-color: transparent; padding-left: 4px; padding-right: 4px; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.sm { min-height: 44px; padding: 0 16px; font-size: .84rem; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  /* fields: 16px text stops iOS zooming on focus */
+  input[type=text], input[type=password], textarea, select { width: 100%; min-height: 48px; border: 1px solid transparent; background: var(--soft); border-radius: 12px; padding: 12px 14px; font-size: 16px; transition: border-color .15s, background .15s; }
+  input[type=text]:focus, input[type=password]:focus, textarea:focus, select:focus { outline: none; background: var(--bg); border-color: var(--ink); }
+  ::placeholder { color: var(--faint); }
+  textarea { resize: vertical; min-height: 104px; line-height: 1.5; }
+  select { appearance: none; -webkit-appearance: none; padding-right: 38px; cursor: pointer; text-overflow: ellipsis;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%230a0a0a' stroke-width='1.4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 15px center; }
+  input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: none; width: 22px; height: 22px; margin: 0; border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--bg) center / 12px no-repeat; cursor: pointer; transition: background-color .15s, border-color .15s; }
+  input[type=checkbox]:checked { background-color: var(--ink); border-color: var(--ink);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3.5 3.5L11 1.5' fill='none' stroke='%23fff' stroke-width='1.8'/%3E%3C/svg%3E"); }
+  label.field { display: block; margin: 22px 0 8px; font-family: var(--mono); font-size: .66rem; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  label.row { cursor: pointer; min-height: 44px; gap: 12px; }
+  /* "Autofill" pill: copies the grey suggestion into an empty box. Touch screens only; keyboards use Tab. */
+  .field-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+  .field-head label.field { flex: 1; min-width: 0; }
+  .suggest { display: none; position: relative; align-items: center; gap: 5px; flex: none; min-height: 28px; margin: 0 0 5px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: .64rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; animation: enter .2s var(--ease) both; transition: background .15s, color .15s, border-color .15s; }
+  .suggest::before { content: ""; position: absolute; inset: -8px -4px; }
+  .suggest:active { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .suggest[hidden] { display: none !important; }
+  .touch-only { display: none; }
+  @media (pointer: coarse) { .suggest { display: inline-flex; } .touch-only { display: inline; } .key-only { display: none; } }
+
   .row { display: flex; gap: 10px; align-items: center; }
   .spread { justify-content: space-between; }
-  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-  .acct { display: flex; align-items: center; gap: 10px; }
-  .acct img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--line); }
-  .tabs { display: flex; gap: 6px; margin: 4px 0 14px; overflow-x: auto; }
-  .tab { border: 0; background: transparent; padding: 8px 12px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 600; white-space: nowrap; }
-  .tab.active { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-  .stat b { display: block; font-size: 1.3rem; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  .seg button { border: 0; background: var(--card); padding: 7px 12px; cursor: pointer; }
-  .seg button.on { background: var(--accent); color: var(--accent-text); }
-  .list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-  .media { display: grid; grid-template-columns: auto 64px 1fr; gap: 12px; align-items: start; }
-  .media input[type=checkbox] { width: 20px; height: 20px; margin-top: 22px; accent-color: var(--accent); }
-  .thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--line); display: block; }
-  .cap { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .chip { background: var(--chip); border-radius: 999px; padding: 2px 9px; font-size: .8rem; font-weight: 600; }
-  .chip.off { opacity: .5; text-decoration: line-through; }
-  .quick { grid-column: 2 / 4; display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
-  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
-  .bar .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-  .rule h3 { margin: 0; font-size: 1rem; }
-  .rule .msg { white-space: pre-wrap; word-break: break-word; margin: 8px 0; }
-  .mini { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; background: var(--line); }
-  .log { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .toolbar { flex-wrap: wrap; gap: 12px; }
+
+  /* header */
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+  .acct { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .acct > div { min-width: 0; }
+  .acct img { flex: none; width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--soft); border: 1px solid var(--line); }
+  #acct-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #acct-sub { margin-top: 2px; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .stat { padding: 16px 0 14px; min-width: 0; }
+  .stat + .stat { border-left: 1px solid var(--line); padding-left: 12px; }
+  .stat b { display: block; font-size: 1.75rem; font-weight: 300; letter-spacing: -0.05em; line-height: 1; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+
+  /* tabs: sticky, full-bleed, equal-width on phones */
+  .tabs { position: sticky; top: 0; z-index: 4; display: flex; margin: 0 calc(-1 * var(--gutter)) 18px; padding: env(safe-area-inset-top) var(--gutter) 0;
+    background: rgba(255,255,255,.88); backdrop-filter: saturate(1.8) blur(14px); -webkit-backdrop-filter: saturate(1.8) blur(14px); box-shadow: inset 0 -1px var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 1; min-height: 50px; border: 0; background: none; padding: 0 4px; border-bottom: 1.5px solid transparent; color: var(--muted); font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
+  .tab.active { color: var(--text); border-bottom-color: var(--ink); }
+
+  .seg { display: inline-flex; background: var(--soft); border-radius: 999px; padding: 3px; }
+  .seg button { min-height: 38px; border: 0; background: transparent; padding: 0 14px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; font-size: .84rem; white-space: nowrap; transition: background .15s, color .15s; }
+  .seg button.on { background: var(--ink); color: #fff; }
+
+  /* posts: the whole card toggles selection */
+  .list { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .media { display: grid; grid-template-columns: auto 64px minmax(0, 1fr); gap: 12px; align-items: start; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .media:active { border-color: var(--line-strong); }
+  .media.picked { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .media input[type=checkbox] { margin-top: 21px; }
+  .thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--soft); display: block; }
+  .cap { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; font-size: .92rem; margin-bottom: 4px; }
+  .media .muted.small { font-family: var(--mono); font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 999px; padding: 3px 10px; font-family: var(--mono); font-size: .72rem; font-weight: 500; line-height: 1.4; max-width: 100%; }
+  button.chip { min-height: 34px; padding: 0 13px; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+  button.chip:active { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip.solid { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip.off { color: var(--faint); text-decoration: line-through; }
+  .chip button { color: var(--muted); min-width: 24px; min-height: 24px; }
+  .quick { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; gap: 8px; cursor: auto; }
+
+  /* action bar: stacked on phones, a single pill on wider screens */
+  .bar { position: fixed; left: var(--gutter); right: var(--gutter); bottom: calc(12px + env(safe-area-inset-bottom)); margin: 0 auto; max-width: 728px; background: var(--ink); color: #fff; border-radius: 22px; padding: 14px 12px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.2); animation: rise .35s var(--ease) both; z-index: 5; }
+  .bar .inner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #bar-text { flex: 1 0 100%; padding: 0 8px; font-weight: 500; }
+  .bar .row { flex: 1; }
+  .bar .btn { flex: 1; background: transparent; color: #fff; border-color: rgba(255,255,255,.22); }
+  .bar #bar-clear { flex: 0 0 auto; }
+  .bar .btn:active { background: rgba(255,255,255,.1); }
+  .bar .btn.primary { background: #fff; color: var(--ink); border-color: #fff; }
+  .bar .btn.primary:active { background: #e8e8e8; }
+
+  /* rules */
+  .toolbar > .muted { flex: 1 1 220px; }
+  #new-global { flex: 1 0 auto; }
+  .rule h3 { margin: 0; font-size: 1rem; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .rule > .row.spread { align-items: flex-start; }
+  .rule .msg, .msg { white-space: pre-wrap; word-break: break-word; margin: 12px 0; font-size: .93rem; }
+  .rule .chip { font-size: .75rem; }
+  .mini { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: var(--soft); }
+
+  /* activity */
+  #activity-list { padding: 4px 14px; }
+  .log { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: .92rem; word-break: break-word; }
   .log:last-child { border-bottom: 0; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; background: var(--ok); }
-  .dot.error { background: var(--err); } .dot.warn { background: #e0a100; }
-  dialog { border: 0; border-radius: var(--radius); padding: 0; width: min(560px, calc(100vw - 24px)); background: var(--card); color: var(--text); }
-  dialog::backdrop { background: rgba(0,0,0,.45); }
-  dialog form { padding: 18px; }
-  .toast { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 10; max-width: calc(100vw - 32px); }
-  .toast.err { background: var(--err); color: #fff; }
+  .log .muted.small { font-family: var(--mono); font-size: .68rem; letter-spacing: .02em; margin-top: 2px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 8px; background: var(--ink); }
+  .dot.error { background: var(--err); } .dot.warn { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--ink); }
+
+  #test-run { width: 100%; }
+
+  /* dialog: bottom sheet on phones, centred modal on wider screens */
+  dialog { border: 0; border-top: 1px solid var(--line); padding: 0; margin: auto 0 0; width: 100%; max-width: 100%; max-height: 92dvh; border-radius: 22px 22px 0 0; background: var(--bg); color: var(--text); box-shadow: 0 -20px 60px rgba(0,0,0,.12); overscroll-behavior: contain; }
+  dialog[open] { animation: sheet .32s var(--ease); }
+  dialog::backdrop { background: rgba(255,255,255,.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  dialog form { padding: 10px var(--gutter) 0; }
+  dialog form::before { content: ""; display: block; width: 36px; height: 4px; border-radius: 4px; background: var(--line-strong); margin: 0 auto 18px; }
+  dialog h1 { font-size: 1.4rem; letter-spacing: -0.035em; }
+  #rule-scope { margin: 6px 0 0; }
+  #f-keywords + .muted, #follow-fields > .muted { margin-top: 8px; font-size: .78rem; }
+  #follow-fields { margin-top: 6px; padding: 2px 0 6px 14px; border-left: 1.5px solid var(--ink); }
+  dialog .actions { position: sticky; bottom: 0; margin: 20px calc(-1 * var(--gutter)) 0; padding: 12px var(--gutter) calc(12px + env(safe-area-inset-bottom)); background: rgba(255,255,255,.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+  dialog .actions > .row { flex: 1; justify-content: flex-end; }
+  dialog .actions > .row .btn { flex: 1; max-width: 160px; }
+
+  .toast { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 999px; font-size: .88rem; font-weight: 500; z-index: 10; width: max-content; max-width: calc(100vw - 32px); text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.15); animation: drop .3s var(--ease) both; }
+  .toast.err { background: var(--err); }
   .center { text-align: center; }
-  .login { max-width: 360px; margin: 12vh auto 0; }
-  .empty { padding: 26px; text-align: center; color: var(--muted); }
-  .result { margin-top: 12px; }
-  a { color: var(--accent); }
-  @media (max-width: 520px) { .quick { grid-template-columns: 1fr; } .stats b { font-size: 1.1rem; } }
+
+  /* login */
+  .login { max-width: 360px; margin: 16vh auto 0; }
+  .login h1 { font-size: 2rem; font-weight: 500; letter-spacing: -0.045em; line-height: 1.05; margin: 10px 0 8px; }
+  .login p { margin: 0 0 28px; }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: .9rem; }
+  .result { margin-top: 14px; }
+  .result b { font-weight: 600; font-size: .85rem; }
+  a { color: var(--ink); text-underline-offset: 3px; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+  @keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
+  @keyframes sheet { from { transform: translateY(100%); } }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+  @keyframes enter { from { opacity: 0; transform: translateY(8px); } }
+  #app-view:not(.hidden) > :not(.tabs), #login-view:not(.hidden) { animation: enter .5s var(--ease) both; }
+  #app-view > :nth-child(2) { animation-delay: .05s; } #app-view > :nth-child(n+4) { animation-delay: .12s; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* hover only where a real pointer exists, so taps don't leave sticky states */
+  @media (hover: hover) and (pointer: fine) {
+    .btn:hover { border-color: var(--ink); }
+    .btn.primary:hover { background: #2a2a2a; border-color: #2a2a2a; }
+    .btn.danger:hover { border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
+    .tab:hover, .seg button:not(.on):hover, .chip button:hover { color: var(--text); }
+    .media:hover { border-color: var(--line-strong); }
+    .media.picked:hover { border-color: var(--ink); }
+    button.chip:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+    input[type=checkbox]:hover { border-color: var(--ink); }
+    input[type=text]:hover, input[type=password]:hover, textarea:hover, select:hover { border-color: var(--line-strong); }
+    .bar .btn:hover { border-color: #fff; }
+    .bar .btn.primary:hover { background: #e8e8e8; }
+  }
+
+  /* small phones */
+  @media (max-width: 359px) {
+    .stat b { font-size: 1.5rem; }
+    .stat + .stat { padding-left: 10px; }
+    .eyebrow { font-size: .6rem; letter-spacing: .05em; }
+    .seg button { padding: 0 11px; }
+  }
+
+  /* tablet and up */
+  @media (min-width: 640px) {
+    .wrap { padding: 40px 24px 150px; }
+    header.top { margin-bottom: 32px; }
+    .acct img { width: 44px; height: 44px; }
+    .eyebrow { font-size: .68rem; letter-spacing: .1em; }
+    .stats { margin-bottom: 12px; }
+    .stat { padding: 22px 0 18px; }
+    .stat + .stat { padding-left: 20px; }
+    .stat b { font-size: 2.4rem; margin-bottom: 10px; }
+    .tabs { gap: 28px; margin: 0 0 22px; padding: 0; background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    .tab { flex: none; min-height: 46px; padding: 0; }
+    .card { padding: 16px; }
+    .media { grid-template-columns: auto 72px minmax(0, 1fr); gap: 14px; }
+    .media input[type=checkbox] { width: 18px; height: 18px; border-radius: 5px; background-size: 11px; margin-top: 27px; }
+    .thumb { width: 72px; height: 72px; }
+    .quick { grid-column: 2 / 4; grid-template-columns: 1fr 2fr; }
+    .btn { min-height: 40px; padding: 0 18px; font-size: .875rem; }
+    .btn.sm { min-height: 34px; padding: 0 14px; font-size: .8rem; }
+    .seg button { min-height: 32px; font-size: .82rem; }
+    button.chip { min-height: 0; padding: 3px 10px; }
+    label.row { min-height: 0; gap: 10px; }
+    input[type=text], input[type=password], textarea, select { min-height: 0; padding: 11px 13px; font-size: .92rem; border-radius: 10px; }
+    #new-global { flex: none; }
+    #test-run { width: auto; }
+    .bar { border-radius: 999px; padding: 8px 8px 8px 22px; }
+    .bar .inner { flex-wrap: nowrap; justify-content: space-between; }
+    #bar-text { flex: 1 1 auto; padding: 0; }
+    .bar .row { flex: none; }
+    .bar .btn { flex: none; }
+    dialog { margin: auto; width: min(560px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 40px 100px rgba(0,0,0,.14); }
+    dialog[open] { animation: pop .25s var(--ease); }
+    dialog form { padding: 28px 28px 0; }
+    dialog form::before { display: none; }
+    dialog h1 { font-size: 1.45rem; }
+    dialog .actions { margin: 24px -28px 0; padding: 14px 28px 18px; }
+    dialog .actions > .row .btn { flex: none; }
+    .toast { top: 18px; padding: 10px 18px; font-size: .86rem; }
+    .login { margin-top: 20vh; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <section id="login-view" class="login hidden">
-    <div class="card">
+    <div>
+      <div class="eyebrow">Dashboard</div>
       <h1>Comment Link Bot</h1>
-      <p class="muted small">Enter your dashboard password.</p>
+      <p class="muted small">Enter your password to continue.</p>
       <form id="login-form">
         <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
-        <button class="btn primary" style="width:100%;margin-top:10px">Log in</button>
+        <button class="btn primary" style="width:100%;margin-top:12px">Log in</button>
       </form>
     </div>
   </section>
@@ -96,16 +270,16 @@
         <img id="acct-pic" alt="">
         <div>
           <h1 id="acct-name">Comment Link Bot</h1>
-          <div id="acct-sub" class="muted small"></div>
+          <div id="acct-sub" class="eyebrow"></div>
         </div>
       </div>
       <button class="btn sm" id="logout">Log out</button>
     </header>
 
     <div class="stats">
-      <div class="card stat"><b id="st-rules">–</b><span class="muted small">active rules</span></div>
-      <div class="card stat"><b id="st-sent">–</b><span class="muted small">DMs, last 7 days</span></div>
-      <div class="card stat"><b id="st-token">–</b><span class="muted small">token renews</span></div>
+      <div class="stat"><b id="st-rules">–</b><span class="eyebrow">Active rules</span></div>
+      <div class="stat"><b id="st-sent">–</b><span class="eyebrow">DMs · 7 days</span></div>
+      <div class="stat"><b id="st-token">–</b><span class="eyebrow">Token renews</span></div>
     </div>
 
     <nav class="tabs">
@@ -117,7 +291,7 @@
 
     <!-- Posts -->
     <section id="tab-posts">
-      <div class="row spread" style="flex-wrap:wrap">
+      <div class="row spread toolbar">
         <div class="seg">
           <button data-filter="all" class="on">All posts</button>
           <button data-filter="norule">Without a rule</button>
@@ -131,16 +305,16 @@
 
     <!-- Rules -->
     <section id="tab-rules" class="hidden">
-      <div class="row spread">
+      <div class="row spread toolbar">
         <span class="muted small">Rules on a specific post win over "all posts" rules.</span>
-        <button class="btn sm primary" id="new-global">+ Rule for all posts</button>
+        <button class="btn sm primary" id="new-global">New rule for all posts</button>
       </div>
       <div id="rule-list" class="list"></div>
     </section>
 
     <!-- Activity -->
     <section id="tab-activity" class="hidden">
-      <div class="row spread"><span class="muted small">Last 100 events</span><button class="btn sm" id="refresh-activity">Refresh</button></div>
+      <div class="row spread"><span class="eyebrow">Last 100 events</span><button class="btn sm" id="refresh-activity">Refresh</button></div>
       <div class="card" style="margin-top:12px" id="activity-list"></div>
     </section>
 
@@ -189,12 +363,12 @@
       <input type="text" id="f-button" maxlength="20" placeholder="I followed ✅">
       <label class="field" for="f-notfollow">If they still don't follow</label>
       <textarea id="f-notfollow" maxlength="1000" placeholder="Looks like you're not following yet 👀 Follow me, then tap the button again."></textarea>
-      <div class="muted small">Press <b>Tab</b> in an empty box to fill in the grey text, then edit it. Boxes left empty use the grey text anyway.</div>
+      <div class="muted small"><span class="key-only">Press <b>Tab</b> in an empty box</span><span class="touch-only">Tap <b>Autofill</b></span> to fill in the grey text, then edit it. Boxes left empty use the grey text anyway.</div>
     </div>
     <label class="row small" style="margin-top:12px"><input type="checkbox" id="f-all"> Apply to all posts</label>
     <label class="row small" style="margin-top:6px"><input type="checkbox" id="f-enabled" checked> Enabled</label>
     <div id="f-media" class="chips"></div>
-    <div class="row spread" style="margin-top:18px">
+    <div class="row spread actions">
       <button class="btn danger hidden" id="rule-delete" type="button">Delete</button>
       <div class="row" style="margin-left:auto">
         <button class="btn" value="cancel" formnovalidate>Cancel</button>
@@ -283,7 +457,7 @@ function renderMedia() {
     const rules = rulesFor(m.id);
     const date = m.timestamp ? new Date(m.timestamp).toLocaleDateString() : "";
     const type = m.media_product_type === "REELS" ? "Reel" : (m.media_type || "").toLowerCase().replace("_", " ");
-    return `<div class="card media" data-id="${esc(m.id)}">
+    return `<div class="card media${state.selected.has(m.id) ? " picked" : ""}" data-id="${esc(m.id)}">
       <input type="checkbox" class="pick" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Select post">
       <a href="${esc(m.permalink)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(thumbOf(m))}" referrerpolicy="no-referrer" loading="lazy" alt=""></a>
       <div>
@@ -301,12 +475,19 @@ $("#media-list").addEventListener("change", (e) => {
   if (!e.target.classList.contains("pick")) return;
   const id = e.target.closest(".media").dataset.id;
   e.target.checked ? state.selected.add(id) : state.selected.delete(id);
+  e.target.closest(".media").classList.toggle("picked", e.target.checked);
   updateBar();
 });
 $("#media-list").addEventListener("input", (e) => { if (e.target.matches(".q-kw, .q-msg")) updateBar(); });
 $("#media-list").addEventListener("click", (e) => {
   const chip = e.target.closest("[data-rule]");
-  if (chip) openRule(state.rules.find((r) => r.id === Number(chip.dataset.rule)));
+  if (chip) return openRule(state.rules.find((r) => r.id === Number(chip.dataset.rule)));
+  // Tapping anywhere else on a post card toggles its checkbox (bigger touch target).
+  const card = e.target.closest(".media");
+  if (!card || e.target.closest("a, button, input, .quick")) return;
+  const box = card.querySelector(".pick");
+  box.checked = !box.checked;
+  box.dispatchEvent(new Event("change", { bubbles: true }));
 });
 $("#more").addEventListener("click", () => loadMedia(false));
 document.querySelectorAll("[data-filter]").forEach((b) => b.addEventListener("click", () => {
@@ -361,16 +542,16 @@ async function loadRules() { state.rules = (await api("rules")).rules; renderRul
 function renderRules() {
   if (!state.rules.length) { $("#rule-list").innerHTML = `<div class="card empty">No rules yet. Select posts on the Posts tab to create one.</div>`; return; }
   $("#rule-list").innerHTML = state.rules.map((r) => {
-    const thumbs = r.all_media ? `<span class="chip">All posts</span>` : r.media.map((m) => {
+    const thumbs = r.all_media ? `<span class="chip solid">All posts</span>` : r.media.map((m) => {
       const loaded = state.media.find((x) => x.id === m.id);
       return loaded ? `<img class="mini" src="${esc(thumbOf(loaded))}" referrerpolicy="no-referrer" title="${esc(m.caption)}" alt="">` : `<span class="chip" title="${esc(m.caption)}">post</span>`;
     }).join("");
     return `<div class="card rule">
       <div class="row spread"><h3>${r.keywords.map((k) => `<span class="chip">${esc(k)}</span>`).join(" ")}</h3>
-        <div class="row"><span class="muted small">${r.sent} sent</span><button class="btn sm" data-edit="${r.id}">Edit</button></div></div>
+        <div class="row"><span class="eyebrow">${r.sent} sent</span><button class="btn sm" data-edit="${r.id}">Edit</button></div></div>
       <div class="msg">${esc(r.message)}</div>
       ${r.public_reply ? `<div class="muted small">Public reply: ${esc(r.public_reply)}</div>` : ""}
-      ${r.require_follow ? `<div class="small" style="margin-top:4px">🔒 Followers only</div>` : ""}
+      ${r.require_follow ? `<div style="margin-top:4px"><span class="chip solid">Followers only</span></div>` : ""}
       <div class="row" style="flex-wrap:wrap;margin-top:8px">${thumbs}${r.enabled ? "" : `<span class="chip off">disabled</span>`}</div>
     </div>`;
   }).join("");
@@ -397,6 +578,7 @@ function openRule(rule, mediaIds = [], allMedia = false) {
   $("#follow-fields").classList.toggle("hidden", !$("#f-follow").checked);
   $("#rule-delete").classList.toggle("hidden", !rule);
   renderDialogMedia();
+  syncSuggestions();
   $("#rule-dialog").showModal();
 }
 
@@ -404,19 +586,39 @@ function renderDialogMedia() {
   const all = $("#f-all").checked;
   $("#rule-scope").textContent = all ? "Applies to every post, including future ones." : `Applies to ${state.dialogMedia.length} post${state.dialogMedia.length === 1 ? "" : "s"}.`;
   $("#f-media").innerHTML = all ? "" : state.dialogMedia.map((m, i) =>
-    `<span class="chip">${esc((m.caption || "post").slice(0, 28))} <button type="button" data-rm="${i}" style="border:0;background:none;cursor:pointer" aria-label="Remove">✕</button></span>`).join("");
+    `<span class="chip">${esc((m.caption || "post").slice(0, 28))} <button type="button" data-rm="${i}" style="border:0;background:none;cursor:pointer;padding:0;font-size:.7rem" aria-label="Remove">✕</button></span>`).join("");
 }
 $("#f-all").addEventListener("change", renderDialogMedia);
 $("#f-follow").addEventListener("change", (e) => $("#follow-fields").classList.toggle("hidden", !e.target.checked));
 
 // Tab in an empty field accepts its grey suggestion; Tab again moves on.
-for (const id of ["#f-reply", "#f-gate", "#f-button", "#f-notfollow"]) {
-  $(id).addEventListener("keydown", (e) => {
-    if (e.key !== "Tab" || e.shiftKey || e.target.value || !e.target.placeholder) return;
+// On touch screens (no Tab key) an "Autofill" pill beside the label does the same.
+const SUGGEST_FIELDS = ["#f-message", "#f-reply", "#f-gate", "#f-button", "#f-notfollow"];
+for (const id of SUGGEST_FIELDS) {
+  const field = $(id);
+  field.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || e.shiftKey || field.value || !field.placeholder) return;
     e.preventDefault();
-    e.target.value = e.target.placeholder;
+    fillSuggestion(field);
   });
+  const label = document.querySelector(`label[for="${field.id}"]`);
+  const head = document.createElement("div");
+  head.className = "field-head";
+  label.before(head);
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "suggest";
+  pill.textContent = "Autofill";
+  pill.setAttribute("aria-label", `Fill in suggested text: ${field.placeholder}`);
+  pill.addEventListener("click", () => fillSuggestion(field));
+  head.append(label, pill);
+  field.addEventListener("input", () => (pill.hidden = !!field.value));
 }
+function fillSuggestion(field) {
+  field.value = field.placeholder;
+  field.dispatchEvent(new Event("input"));
+}
+function syncSuggestions() { for (const id of SUGGEST_FIELDS) $(id).dispatchEvent(new Event("input")); }
 $("#f-media").addEventListener("click", (e) => {
   const b = e.target.closest("[data-rm]");
   if (b) { state.dialogMedia.splice(Number(b.dataset.rm), 1); renderDialogMedia(); }

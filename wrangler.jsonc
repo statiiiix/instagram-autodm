@@ -6,6 +6,9 @@
   "workers_dev": true,
   "observability": { "enabled": true },
 
+  // Bundle the favicon as a text module so index.js can import it.
+  "rules": [{ "type": "Text", "globs": ["**/*.svg"], "fallthrough": true }],
+
   // Daily: refresh the Instagram token and clean up old records.
   "triggers": { "crons": ["17 4 * * *"] },
 
