@@ -13,9 +13,9 @@
   "triggers": { "crons": ["17 4 * * *"] },
 
   // Shown on the public privacy and data-deletion pages Meta requires.
+  // CONTACT_EMAIL is set as a secret so it stays out of the repo.
   "vars": {
-    "ACCOUNT_NAME": "statixcodes",
-    "CONTACT_EMAIL": "you@example.com"
+    "ACCOUNT_NAME": "statixcodes"
   },
 
   "d1_databases": [
@@ -31,4 +31,5 @@
   //   APP_SECRET       Instagram app secret, used to check webhooks really come from Meta
   //   VERIFY_TOKEN     Random string, also pasted into Meta's webhook settings
   //   ADMIN_PASSWORD   Password for the /admin dashboard
+  //   CONTACT_EMAIL    Contact email shown on the privacy and data-deletion pages
 }
